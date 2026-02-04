@@ -168,18 +168,22 @@ void visualizer_init(VisualizerState *state) {
   SetShaderValue(state->shader, ambientLoc, (float[4]){0.1f, 0.1f, 0.1f, 1.0f},
                  SHADER_UNIFORM_VEC4);
 
+  float led_spacing = 1.0f / 143.0f;  // 144 LEDs over 1m
+  float led_radius = 0.003f;
+
   state->num_strips = 2;
-  // leds_per_light=8: average every 8 LEDs into one shader light (18 per strip)
+  // Two strips against the back wall (Z=-2.95), pointing upward (90° on Z),
+  // equidistant from corners: X = -5/6 and X = 5/6, starting at Y=1.0
   led_strip_create(&state->strips[0], state->shader, 0, MAX_LEDS_PER_STRIP,
-                   8, (Vector3){0.0f, 0.5f, 2.0f}, (Vector3){0.0f, 0.0f, 0.0f},
-                   0.1f, 0.1f, 0.02f);
+                   8, (Vector3){-5.0f/6.0f, 1.0f, -2.95f}, (Vector3){0.0f, 0.0f, 90.0f},
+                   led_spacing, 0.1f, led_radius);
   led_strip_create(&state->strips[1], state->shader, 18, MAX_LEDS_PER_STRIP,
-                   8, (Vector3){0.0f, 1.5f, 0.0f}, (Vector3){0.0f, 45.0f, 0.0f},
-                   0.1f, 0.1f, 0.02f);
+                   8, (Vector3){5.0f/6.0f, 1.0f, -2.95f}, (Vector3){0.0f, 0.0f, 90.0f},
+                   led_spacing, 0.1f, led_radius);
 
   if (state->camera.fovy == 0) {
-    state->camera.position = (Vector3){2.0f, 4.0f, 6.0f};
-    state->camera.target = (Vector3){0.0f, 0.5f, 0.0f};
+    state->camera.position = (Vector3){0.5f, 1.6f, 2.5f};
+    state->camera.target = (Vector3){0.0f, 1.0f, -1.0f};
     state->camera.up = (Vector3){0.0f, 1.0f, 0.0f};
     state->camera.fovy = 45.0f;
     state->camera.projection = CAMERA_PERSPECTIVE;
@@ -215,19 +219,39 @@ void visualizer_draw(VisualizerState *state) {
   BeginMode3D(state->camera);
   BeginShaderMode(state->shader);
 
-  DrawPlane(Vector3Zero(), (Vector2){100.0f, 100.0f}, GRAY);
-  DrawCube((Vector3){0, 0, 0}, 2.0f, 4.0f, 2.0f, GRAY);
-  DrawCube((Vector3){6, 0, 0}, 2.0f, 4.0f, 2.0f, GRAY);
-  DrawCube((Vector3){12, 0, 0}, 2.0f, 4.0f, 2.0f, GRAY);
-  DrawCube((Vector3){18, 0, 0}, 2.0f, 4.0f, 2.0f, GRAY);
+  // Room: 5m (X) x 3m (Y) x 6m (Z), centered at origin
+  // Floor
+  DrawPlane((Vector3){0.0f, 0.0f, 0.0f}, (Vector2){5.0f, 6.0f}, GRAY);
+  // Ceiling
+  DrawCube((Vector3){0.0f, 3.0f, 0.0f}, 5.0f, 0.01f, 6.0f, DARKGRAY);
+  // Back wall (Z = -3)
+  DrawCube((Vector3){0.0f, 1.5f, -3.0f}, 5.0f, 3.0f, 0.01f, GRAY);
+  // Left wall (X = -2.5)
+  DrawCube((Vector3){-2.5f, 1.5f, 0.0f}, 0.01f, 3.0f, 6.0f, LIGHTGRAY);
+  // Right wall (X = 2.5)
+  DrawCube((Vector3){2.5f, 1.5f, 0.0f}, 0.01f, 3.0f, 6.0f, LIGHTGRAY);
+  // Front wall (Z = 3) — behind the camera
+  DrawCube((Vector3){0.0f, 1.5f, 3.0f}, 5.0f, 3.0f, 0.01f, GRAY);
+
+  // Person (~1.8m tall)
+  // Torso
+  DrawCube((Vector3){0.0f, 1.1f, 0.0f}, 0.35f, 0.6f, 0.2f, GRAY);
+  // Head
+  DrawSphere((Vector3){0.0f, 1.55f, 0.0f}, 0.12f, GRAY);
+  // Left leg
+  DrawCube((Vector3){-0.1f, 0.4f, 0.0f}, 0.12f, 0.8f, 0.15f, GRAY);
+  // Right leg
+  DrawCube((Vector3){0.1f, 0.4f, 0.0f}, 0.12f, 0.8f, 0.15f, GRAY);
+  // Left arm
+  DrawCube((Vector3){-0.27f, 1.05f, 0.0f}, 0.1f, 0.65f, 0.1f, GRAY);
+  // Right arm
+  DrawCube((Vector3){0.27f, 1.05f, 0.0f}, 0.1f, 0.65f, 0.1f, GRAY);
 
   EndShaderMode();
 
   for (int s = 0; s < state->num_strips; s++) {
     led_strip_draw(&state->strips[s]);
   }
-
-  DrawGrid(100, 1.0f);
 
   EndMode3D();
 
