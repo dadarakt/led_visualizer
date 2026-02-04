@@ -33,6 +33,10 @@ uniform Light lights[MAX_LIGHTS];
 uniform vec4 ambient;
 uniform vec3 viewPos;
 
+// Fog/smoke parameters
+const vec3 fogColor = vec3(0.12, 0.12, 0.14);
+const float fogDensity = 0.75;
+
 void main()
 {
     // Texel color fetching from texture sampler
@@ -80,4 +84,23 @@ void main()
 
     // Gamma correction
     finalColor = pow(finalColor, vec4(1.0/2.2));
+
+    // Exponential fog/smoke with in-scattering from lights
+    float dist = length(viewPos - fragPosition);
+    float fogFactor = exp(-fogDensity * dist);
+
+    // Accumulate light scattered into the fog
+    vec3 fogLit = fogColor;
+    float scatterStrength = 0.08;
+    for (int i = 0; i < MAX_LIGHTS; i++)
+    {
+        if (lights[i].enabled == 1 && lights[i].type == LIGHT_POINT)
+        {
+            float dLight = length(lights[i].position - fragPosition);
+            float scatter = lights[i].intensity * scatterStrength / (1.0 + dLight * dLight);
+            fogLit += lights[i].color.rgb * scatter;
+        }
+    }
+
+    finalColor.rgb = mix(fogLit, finalColor.rgb, fogFactor);
 }

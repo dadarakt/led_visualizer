@@ -158,10 +158,12 @@ static void led_strip_draw(LedStrip *strip, long t) {
 
   for (int i = 0; i < strip->num_leds; i++) {
     Light *led = &strip->leds[i];
-    float phase = (float)t * 0.03f + (float)i * 0.15f;
-    led->color.r = (unsigned char)(127.5f + 127.5f * sinf(phase));
-    led->color.g = (unsigned char)(127.5f + 127.5f * sinf(phase + 2.094f));
-    led->color.b = (unsigned char)(127.5f + 127.5f * sinf(phase + 4.189f));
+    // Pulse red-to-blue across the strip
+    float pos = (float)i / (float)(strip->num_leds - 1);  // 0..1 along strip
+    float pulse = 0.5f + 0.5f * sinf((float)t * 0.03f - pos * 6.0f);
+    led->color.r = (unsigned char)(255.0f * (1.0f - pulse));
+    led->color.g = 0;
+    led->color.b = (unsigned char)(255.0f * pulse);
 
     if (led->enabled) {
       DrawSphereEx(led->position, led->radius, 4, 4,
@@ -201,19 +203,19 @@ void visualizer_init(VisualizerState *state) {
   // equidistant from corners: X = -5/6 and X = 5/6, starting at Y=1.0
   led_strip_create(&state->strips[0], state->shader, 0, MAX_LEDS_PER_STRIP, 8,
                    (Vector3){-10.0f / 6.0f, 1.0f, -2.95f},
-                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.10f,
+                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.30f,
                    led_radius);
   led_strip_create(&state->strips[1], state->shader, 18, MAX_LEDS_PER_STRIP, 8,
                    (Vector3){-5.0f / 6.0f, 1.0f, -2.95f},
-                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.10f,
+                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.30f,
                    led_radius);
   led_strip_create(&state->strips[2], state->shader, 36, MAX_LEDS_PER_STRIP, 8,
                    (Vector3){5.0f / 6.0f, 1.0f, -2.95f},
-                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.10f,
+                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.30f,
                    led_radius);
   led_strip_create(&state->strips[3], state->shader, 54, MAX_LEDS_PER_STRIP, 8,
                    (Vector3){10.0f / 6.0f, 1.0f, -2.95f},
-                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.10f,
+                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.30f,
                    led_radius);
 
   if (state->camera.fovy == 0) {
