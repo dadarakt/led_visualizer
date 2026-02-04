@@ -113,7 +113,7 @@ int main(void) {
   resolve_lib_path();
 
   SetConfigFlags(FLAG_MSAA_4X_HINT);
-  InitWindow(800, 450, "raylib hot reload - basic lighting");
+  InitWindow(1280, 720, "raylib hot reload - basic lighting");
 
   VisualizerState state = {0};
   void *visualizer_handle = NULL;
