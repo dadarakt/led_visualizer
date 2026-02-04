@@ -53,9 +53,9 @@ static Light create_light(int index, int type, Vector3 position, Vector3 target,
 }
 
 static void led_strip_create(LedStrip *strip, Shader shader, int base_index,
-                             int num_leds, int leds_per_light,
-                             Vector3 position, Vector3 rotation,
-                             float spacing, float intensity, float radius) {
+                             int num_leds, int leds_per_light, Vector3 position,
+                             Vector3 rotation, float spacing, float intensity,
+                             float radius) {
   strip->num_leds = num_leds;
   strip->base_index = base_index;
   strip->leds_per_light = leds_per_light;
@@ -68,8 +68,8 @@ static void led_strip_create(LedStrip *strip, Shader shader, int base_index,
   memset(strip->leds, 0, sizeof(strip->leds));
   memset(strip->shader_lights, 0, sizeof(strip->shader_lights));
 
-  Matrix rot = MatrixRotateXYZ(
-      (Vector3){rotation.x * DEG2RAD, rotation.y * DEG2RAD, rotation.z * DEG2RAD});
+  Matrix rot = MatrixRotateXYZ((Vector3){
+      rotation.x * DEG2RAD, rotation.y * DEG2RAD, rotation.z * DEG2RAD});
 
   // Create visual LEDs at full resolution (no shader locations needed)
   for (int i = 0; i < num_leds; i++) {
@@ -100,13 +100,13 @@ static void led_strip_create(LedStrip *strip, Shader shader, int base_index,
     center = Vector3Scale(center, 1.0f / leds_per_light);
 
     int shader_index = base_index + g;
-    strip->shader_lights[g] = create_light(
-        shader_index, LIGHT_POINT, center, Vector3Zero(),
-        strip->leds[start].color, radius, intensity, shader);
+    strip->shader_lights[g] =
+        create_light(shader_index, LIGHT_POINT, center, Vector3Zero(),
+                     strip->leds[start].color, radius, intensity, shader);
   }
 }
 
-static void led_strip_update(LedStrip *strip, Shader shader) {
+static void led_strip_update(LedStrip *strip, Shader shader, long t) {
   int lpl = strip->leds_per_light;
 
   for (int g = 0; g < strip->num_shader_lights; g++) {
@@ -121,29 +121,54 @@ static void led_strip_update(LedStrip *strip, Shader shader) {
       gr += led->color.g;
       b += led->color.b;
       a += led->color.a;
-      if (led->enabled) any_enabled = true;
+      if (led->enabled)
+        any_enabled = true;
     }
-    strip->shader_lights[g].color = (Color){r / lpl, gr / lpl, b / lpl, a / lpl};
+    strip->shader_lights[g].color =
+        (Color){r / lpl, gr / lpl, b / lpl, a / lpl};
     strip->shader_lights[g].enabled = any_enabled;
 
     update_light_values(shader, strip->shader_lights[g]);
   }
 }
 
-static void led_strip_draw(LedStrip *strip) {
+static void led_strip_draw(LedStrip *strip, long t) {
+  // Draw housing behind the LEDs
+  float strip_len = (strip->num_leds - 1) * strip->spacing;
+  Vector3 rot = strip->rotation;
+  Matrix rotM = MatrixRotateXYZ(
+      (Vector3){rot.x * DEG2RAD, rot.y * DEG2RAD, rot.z * DEG2RAD});
+
+  // Center of the strip in local space, offset slightly behind (negative Z)
+  Vector3 local_center = {strip_len * 0.5f, 0.0f, -0.005f};
+  Vector3 housing_pos =
+      Vector3Add(strip->position, Vector3Transform(local_center, rotM));
+
+  // Housing size: length of strip x narrow width x thin depth
+  Vector3 local_size = {strip_len + 0.01f, 0.015f, 0.003f};
+  // Rotate the size axes to get world-aligned cube dimensions
+  Vector3 sx = Vector3Transform((Vector3){local_size.x, 0, 0}, rotM);
+  Vector3 sy = Vector3Transform((Vector3){0, local_size.y, 0}, rotM);
+  Vector3 sz = Vector3Transform((Vector3){0, 0, local_size.z}, rotM);
+  float wx = fabsf(sx.x) + fabsf(sy.x) + fabsf(sz.x);
+  float wy = fabsf(sx.y) + fabsf(sy.y) + fabsf(sz.y);
+  float wz = fabsf(sx.z) + fabsf(sy.z) + fabsf(sz.z);
+
+  DrawCube(housing_pos, wx, wy, wz, LIGHTGRAY);
+
   for (int i = 0; i < strip->num_leds; i++) {
     Light *led = &strip->leds[i];
-    led->color.r += 1;
-    led->color.r %= 255;
-    led->color.g += 1;
-    led->color.g %= 255;
-    led->color.b += 1;
-    led->color.b %= 255;
+    float phase = (float)t * 0.03f + (float)i * 0.15f;
+    led->color.r = (unsigned char)(127.5f + 127.5f * sinf(phase));
+    led->color.g = (unsigned char)(127.5f + 127.5f * sinf(phase + 2.094f));
+    led->color.b = (unsigned char)(127.5f + 127.5f * sinf(phase + 4.189f));
+
     if (led->enabled) {
-      DrawSphereEx(led->position, led->radius, 8, 8, led->color);
+      DrawSphereEx(led->position, led->radius, 4, 4,
+                   ColorAlpha(led->color, 0.4f));
     } else {
-      DrawSphereWires(led->position, led->radius, 8, 8,
-                      ColorAlpha(led->color, 0.3f));
+      DrawSphereWires(led->position, led->radius, 4, 4,
+                      ColorAlpha(led->color, 0.1f));
     }
   }
 }
@@ -168,18 +193,28 @@ void visualizer_init(VisualizerState *state) {
   SetShaderValue(state->shader, ambientLoc, (float[4]){0.1f, 0.1f, 0.1f, 1.0f},
                  SHADER_UNIFORM_VEC4);
 
-  float led_spacing = 1.0f / 143.0f;  // 144 LEDs over 1m
+  float led_spacing = 1.0f / 143.0f; // 144 LEDs over 1m
   float led_radius = 0.003f;
 
-  state->num_strips = 2;
+  state->num_strips = 4;
   // Two strips against the back wall (Z=-2.95), pointing upward (90° on Z),
   // equidistant from corners: X = -5/6 and X = 5/6, starting at Y=1.0
-  led_strip_create(&state->strips[0], state->shader, 0, MAX_LEDS_PER_STRIP,
-                   8, (Vector3){-5.0f/6.0f, 1.0f, -2.95f}, (Vector3){0.0f, 0.0f, 90.0f},
-                   led_spacing, 0.1f, led_radius);
-  led_strip_create(&state->strips[1], state->shader, 18, MAX_LEDS_PER_STRIP,
-                   8, (Vector3){5.0f/6.0f, 1.0f, -2.95f}, (Vector3){0.0f, 0.0f, 90.0f},
-                   led_spacing, 0.1f, led_radius);
+  led_strip_create(&state->strips[0], state->shader, 0, MAX_LEDS_PER_STRIP, 8,
+                   (Vector3){-10.0f / 6.0f, 1.0f, -2.95f},
+                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.10f,
+                   led_radius);
+  led_strip_create(&state->strips[1], state->shader, 18, MAX_LEDS_PER_STRIP, 8,
+                   (Vector3){-5.0f / 6.0f, 1.0f, -2.95f},
+                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.10f,
+                   led_radius);
+  led_strip_create(&state->strips[2], state->shader, 36, MAX_LEDS_PER_STRIP, 8,
+                   (Vector3){5.0f / 6.0f, 1.0f, -2.95f},
+                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.10f,
+                   led_radius);
+  led_strip_create(&state->strips[3], state->shader, 54, MAX_LEDS_PER_STRIP, 8,
+                   (Vector3){10.0f / 6.0f, 1.0f, -2.95f},
+                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.10f,
+                   led_radius);
 
   if (state->camera.fovy == 0) {
     state->camera.position = (Vector3){0.5f, 1.6f, 2.5f};
@@ -198,7 +233,7 @@ void visualizer_update(VisualizerState *state) {
   SetShaderValue(state->shader, state->shader.locs[SHADER_LOC_VECTOR_VIEW],
                  cameraPos, SHADER_UNIFORM_VEC3);
 
-  if (IsKeyPressed(KEY_SPACE)) {
+  if (IsKeyPressed(KEY_T)) {
     for (int s = 0; s < state->num_strips; s++) {
       for (int i = 0; i < state->strips[s].num_leds; i++) {
         state->strips[s].leds[i].enabled = !state->strips[s].leds[i].enabled;
@@ -207,8 +242,10 @@ void visualizer_update(VisualizerState *state) {
   }
 
   for (int s = 0; s < state->num_strips; s++) {
-    led_strip_update(&state->strips[s], state->shader);
+    led_strip_update(&state->strips[s], state->shader, state->t);
   }
+
+  state->t += 1;
 }
 
 void visualizer_draw(VisualizerState *state) {
@@ -225,13 +262,13 @@ void visualizer_draw(VisualizerState *state) {
   // Ceiling
   DrawCube((Vector3){0.0f, 3.0f, 0.0f}, 5.0f, 0.01f, 6.0f, DARKGRAY);
   // Back wall (Z = -3)
-  DrawCube((Vector3){0.0f, 1.5f, -3.0f}, 5.0f, 3.0f, 0.01f, GRAY);
+  DrawCube((Vector3){0.0f, 1.5f, -3.0f}, 5.0f, 3.0f, 0.01f, DARKGRAY);
   // Left wall (X = -2.5)
-  DrawCube((Vector3){-2.5f, 1.5f, 0.0f}, 0.01f, 3.0f, 6.0f, LIGHTGRAY);
+  DrawCube((Vector3){-2.5f, 1.5f, 0.0f}, 0.01f, 3.0f, 6.0f, DARKGRAY);
   // Right wall (X = 2.5)
-  DrawCube((Vector3){2.5f, 1.5f, 0.0f}, 0.01f, 3.0f, 6.0f, LIGHTGRAY);
+  DrawCube((Vector3){2.5f, 1.5f, 0.0f}, 0.01f, 3.0f, 6.0f, DARKGRAY);
   // Front wall (Z = 3) — behind the camera
-  DrawCube((Vector3){0.0f, 1.5f, 3.0f}, 5.0f, 3.0f, 0.01f, GRAY);
+  DrawCube((Vector3){0.0f, 1.5f, 3.0f}, 5.0f, 3.0f, 0.01f, DARKGRAY);
 
   // Person (~1.8m tall)
   // Torso
@@ -250,14 +287,14 @@ void visualizer_draw(VisualizerState *state) {
   EndShaderMode();
 
   for (int s = 0; s < state->num_strips; s++) {
-    led_strip_draw(&state->strips[s]);
+    led_strip_draw(&state->strips[s], state->t);
   }
 
   EndMode3D();
 
   DrawFPS(10, 10);
 
-  DrawText("Use space to toggle lights", 10, 40, 20, DARKGRAY);
+  DrawText("Use T to toggle lights", 10, 40, 20, DARKGRAY);
 
   EndDrawing();
 }
