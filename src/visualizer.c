@@ -154,16 +154,23 @@ static void led_strip_draw(LedStrip *strip, long t) {
   float wy = fabsf(sx.y) + fabsf(sy.y) + fabsf(sz.y);
   float wz = fabsf(sx.z) + fabsf(sy.z) + fabsf(sz.z);
 
-  DrawCube(housing_pos, wx, wy, wz, LIGHTGRAY);
+  DrawCube(housing_pos, wx, wy, wz, GRAY);
 
   for (int i = 0; i < strip->num_leds; i++) {
     Light *led = &strip->leds[i];
     // Pulse red-to-blue across the strip
-    float pos = (float)i / (float)(strip->num_leds - 1);  // 0..1 along strip
+    float pos = (float)i / (float)(strip->num_leds - 1); // 0..1 along strip
     float pulse = 0.5f + 0.5f * sinf((float)t * 0.03f - pos * 6.0f);
-    led->color.r = (unsigned char)(255.0f * (1.0f - pulse));
+
+    // Heartbeat intensity: double-bump (lub-dub) at ~72 bpm
+    float beat_phase = fmodf((float)t * 0.02f, 6.2832f) / 6.2832f; // 0..1
+    float lub = expf(-powf((beat_phase - 0.15f) * 12.0f, 2.0f));
+    float dub = expf(-powf((beat_phase - 0.35f) * 12.0f, 2.0f));
+    float heartbeat = 0.6f + 0.4f * fmaxf(lub, dub);
+
+    led->color.r = (unsigned char)(255.0f * (1.0f - pulse) * heartbeat);
     led->color.g = 0;
-    led->color.b = (unsigned char)(255.0f * pulse);
+    led->color.b = (unsigned char)(255.0f * pulse * heartbeat);
 
     if (led->enabled) {
       DrawSphereEx(led->position, led->radius, 4, 4,
