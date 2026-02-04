@@ -3,7 +3,7 @@
 #include "raylib.h"
 #include <stdbool.h>
 
-#define MAX_LIGHTS 32
+#define MAX_LIGHTS 144
 
 typedef enum { LIGHT_DIRECTIONAL = 0, LIGHT_POINT } LightType;
 

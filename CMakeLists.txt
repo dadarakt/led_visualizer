@@ -6,7 +6,6 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-set(CMAKE_INSTALL_RPATH "\$ORIGIN/extern/raylib/raylib")
 set(BUILD_SHARED_LIBS ON)
 add_subdirectory(extern/raylib)
 
@@ -20,13 +19,15 @@ add_executable(bullet_hell
 )
 target_link_libraries(bullet_hell PRIVATE raylib dl)
 
-# Copy shader resources to build directory
-add_custom_command(TARGET bullet_hell POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_SOURCE_DIR}/resources ${CMAKE_BINARY_DIR}/resources)
-add_custom_command(TARGET visualizer POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_SOURCE_DIR}/resources ${CMAKE_BINARY_DIR}/resources)
+# Copy shader resources to build directory (if it exists)
+if(EXISTS ${CMAKE_SOURCE_DIR}/resources)
+    add_custom_command(TARGET bullet_hell POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/resources ${CMAKE_BINARY_DIR}/resources)
+    add_custom_command(TARGET visualizer POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/resources ${CMAKE_BINARY_DIR}/resources)
+endif()
 
 # Platform extras
 if (APPLE)
@@ -36,7 +37,8 @@ if (APPLE)
         "-framework OpenGL"
         "-framework IOKit"
     )
-    target_link_options(bullet_hell PRIVATE "-Wl,-rpath,@loader_path/../extern/raylib")
+    target_link_options(bullet_hell PRIVATE "-Wl,-rpath,@loader_path/extern/raylib/raylib")
+    target_link_options(visualizer PRIVATE "-Wl,-rpath,@loader_path/extern/raylib/raylib")
 endif()
 
 if(UNIX AND NOT APPLE)
