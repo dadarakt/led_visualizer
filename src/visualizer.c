@@ -40,7 +40,7 @@ void visualizer_update(VisualizerState *state) {
       Bullet *b = &state->bullets[state->bulletCount++];
       b->position = (Vector2){400, 225}; // screen center
       b->disabled = false;
-      b->color = (row % 2) ? RED : BLUE;
+      b->color = (row % 2) ? GREEN : SKYBLUE;
 
       float bulletDirection = state->baseDirection + degreesPerRow * row;
       b->acceleration =
