@@ -24,13 +24,16 @@ static void program_heartbeat_pulse(LedStrip *strips, int num_strips,
 }
 
 static void program_rainbow(LedStrip *strips, int num_strips, int strip_index,
-                             int led_index, long t) {
+                            int led_index, long t) {
   Light *led = &strips[strip_index].leds[led_index];
   float phase = (float)t * 0.05f;
-  float offset = (float)led_index / (float)strips[strip_index].num_leds * 6.2832f;
+  float offset =
+      (float)led_index / (float)strips[strip_index].num_leds * 6.2832f;
   led->color.r = (unsigned char)(127.5f + 127.5f * sinf(phase + offset));
-  led->color.g = (unsigned char)(127.5f + 127.5f * sinf(phase + offset + 2.094f));
-  led->color.b = (unsigned char)(127.5f + 127.5f * sinf(phase + offset + 4.189f));
+  led->color.g =
+      (unsigned char)(127.5f + 127.5f * sinf(phase + offset + 2.094f));
+  led->color.b =
+      (unsigned char)(127.5f + 127.5f * sinf(phase + offset + 4.189f));
 }
 
 static void program_solid_white(LedStrip *strips, int num_strips,
@@ -129,7 +132,7 @@ static void led_strip_create(LedStrip *strip, Shader shader, int base_index,
         .target = Vector3Zero(),
         .color = color,
         .radius = radius,
-        .attenuation = intensity,
+        .attenuation = intensity + 0.5f,
     };
   }
 
@@ -236,7 +239,7 @@ void visualizer_init(VisualizerState *state) {
                  SHADER_UNIFORM_VEC4);
 
   float led_spacing = 1.0f / 143.0f; // 144 LEDs over 1m
-  float led_radius = 0.003f;
+  float led_radius = 0.004f;
 
   state->num_strips = 4;
   // Two strips against the back wall (Z=-2.95), pointing upward (90° on Z),
