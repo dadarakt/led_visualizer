@@ -39,12 +39,17 @@ typedef struct {
   Light shader_lights[MAX_LEDS_PER_STRIP]; // averaged lights sent to GPU
 } LedStrip;
 
+typedef void (*ColorProgram)(LedStrip *strips, int num_strips, int strip_index,
+                             int led_index, long t);
+
 typedef struct VisualizerState {
   Camera camera;
   Shader shader;
   int num_strips;
   LedStrip strips[MAX_STRIPS];
   long t;
+  int active_program;
+  ColorProgram color_program;
 } VisualizerState;
 
 // Initialize state (load shader, create lights, set up camera)

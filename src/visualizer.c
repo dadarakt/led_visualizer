@@ -1,9 +1,52 @@
 #include "visualizer.h"
 #include "raymath.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
 #define GLSL_VERSION 330
+
+// --- Color programs ---
+
+static void program_heartbeat_pulse(LedStrip *strips, int num_strips,
+                                    int strip_index, int led_index, long t) {
+  Light *led = &strips[strip_index].leds[led_index];
+  float pulse = 0.5f + 0.5f * sinf((float)t * 0.03f - led->position.x * 2.0f);
+
+  float beat_phase = fmodf((float)t * 0.02f, 6.2832f) / 6.2832f;
+  float lub = expf(-powf((beat_phase - 0.15f) * 12.0f, 2.0f));
+  float dub = expf(-powf((beat_phase - 0.35f) * 12.0f, 2.0f));
+  float heartbeat = 0.6f + 0.4f * fmaxf(lub, dub);
+
+  led->color.r = (unsigned char)(255.0f * (1.0f - pulse) * heartbeat);
+  led->color.g = 0;
+  led->color.b = (unsigned char)(255.0f * pulse * heartbeat);
+}
+
+static void program_rainbow(LedStrip *strips, int num_strips, int strip_index,
+                             int led_index, long t) {
+  Light *led = &strips[strip_index].leds[led_index];
+  float phase = (float)t * 0.05f;
+  float offset = (float)led_index / (float)strips[strip_index].num_leds * 6.2832f;
+  led->color.r = (unsigned char)(127.5f + 127.5f * sinf(phase + offset));
+  led->color.g = (unsigned char)(127.5f + 127.5f * sinf(phase + offset + 2.094f));
+  led->color.b = (unsigned char)(127.5f + 127.5f * sinf(phase + offset + 4.189f));
+}
+
+static void program_solid_white(LedStrip *strips, int num_strips,
+                                int strip_index, int led_index, long t) {
+  (void)num_strips;
+  (void)t;
+  Light *led = &strips[strip_index].leds[led_index];
+  led->color.r = 255;
+  led->color.g = 255;
+  led->color.b = 255;
+}
+
+static ColorProgram programs[] = {program_heartbeat_pulse, program_rainbow,
+                                  program_solid_white};
+static const char *program_names[] = {"Heartbeat", "Rainbow", "Solid White"};
+static const int NUM_PROGRAMS = 3;
 
 static void update_light_values(Shader shader, Light light) {
   SetShaderValue(shader, light.enabledLoc, &light.enabled, SHADER_UNIFORM_INT);
@@ -132,7 +175,9 @@ static void led_strip_update(LedStrip *strip, Shader shader, long t) {
   }
 }
 
-static void led_strip_draw(LedStrip *strip, long t) {
+static void led_strip_draw(LedStrip *strips, int num_strips, int strip_index,
+                           ColorProgram program, long t) {
+  LedStrip *strip = &strips[strip_index];
   // Draw housing behind the LEDs
   float strip_len = (strip->num_leds - 1) * strip->spacing;
   Vector3 rot = strip->rotation;
@@ -157,20 +202,9 @@ static void led_strip_draw(LedStrip *strip, long t) {
   DrawCube(housing_pos, wx, wy, wz, GRAY);
 
   for (int i = 0; i < strip->num_leds; i++) {
+    program(strips, num_strips, strip_index, i, t);
+
     Light *led = &strip->leds[i];
-    // Pulse red-to-blue horizontally across all strips
-    float pulse = 0.5f + 0.5f * sinf((float)t * 0.03f - led->position.x * 2.0f);
-
-    // Heartbeat intensity: double-bump (lub-dub) at ~72 bpm
-    float beat_phase = fmodf((float)t * 0.02f, 6.2832f) / 6.2832f; // 0..1
-    float lub = expf(-powf((beat_phase - 0.15f) * 12.0f, 2.0f));
-    float dub = expf(-powf((beat_phase - 0.35f) * 12.0f, 2.0f));
-    float heartbeat = 0.6f + 0.4f * fmaxf(lub, dub);
-
-    led->color.r = (unsigned char)(255.0f * (1.0f - pulse) * heartbeat);
-    led->color.g = 0;
-    led->color.b = (unsigned char)(255.0f * pulse * heartbeat);
-
     if (led->enabled) {
       DrawSphereEx(led->position, led->radius, 4, 4,
                    ColorAlpha(led->color, 0.4f));
@@ -224,6 +258,9 @@ void visualizer_init(VisualizerState *state) {
                    (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.30f,
                    led_radius);
 
+  state->active_program = 0;
+  state->color_program = programs[0];
+
   if (state->camera.fovy == 0) {
     state->camera.position = (Vector3){0.5f, 1.6f, 2.5f};
     state->camera.target = (Vector3){0.0f, 1.0f, -1.0f};
@@ -240,6 +277,11 @@ void visualizer_update(VisualizerState *state) {
                         state->camera.position.z};
   SetShaderValue(state->shader, state->shader.locs[SHADER_LOC_VECTOR_VIEW],
                  cameraPos, SHADER_UNIFORM_VEC3);
+
+  if (IsKeyPressed(KEY_P)) {
+    state->active_program = (state->active_program + 1) % NUM_PROGRAMS;
+    state->color_program = programs[state->active_program];
+  }
 
   if (IsKeyPressed(KEY_T)) {
     for (int s = 0; s < state->num_strips; s++) {
@@ -295,14 +337,18 @@ void visualizer_draw(VisualizerState *state) {
   EndShaderMode();
 
   for (int s = 0; s < state->num_strips; s++) {
-    led_strip_draw(&state->strips[s], state->t);
+    led_strip_draw(state->strips, state->num_strips, s, state->color_program,
+                   state->t);
   }
 
   EndMode3D();
 
   DrawFPS(10, 10);
 
-  DrawText("Use T to toggle lights", 10, 40, 20, DARKGRAY);
+  DrawText(TextFormat("Program: %s (P to cycle)",
+                      program_names[state->active_program]),
+           10, 40, 20, DARKGRAY);
+  DrawText("T to toggle lights", 10, 65, 20, DARKGRAY);
 
   EndDrawing();
 }
