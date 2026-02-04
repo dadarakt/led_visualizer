@@ -10,8 +10,14 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#define LIB_NAME "libvisualizer.dylib"
+#define LIB_COPY_NAME "libvisualizer_live.dylib"
+#else
 #define LIB_NAME "libvisualizer.so"
 #define LIB_COPY_NAME "libvisualizer_live.so"
+#endif
 
 typedef struct VisualizerAPI {
   void (*init)(VisualizerState *);
@@ -24,12 +30,27 @@ static char lib_copy_path[4096];
 
 static void resolve_lib_path(void) {
   char exe[4096];
+  bool found = false;
+
+#ifdef __APPLE__
+  uint32_t size = sizeof(exe);
+  if (_NSGetExecutablePath(exe, &size) == 0) {
+    found = true;
+  }
+#else
   ssize_t len = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
-  if (len <= 0) {
+  if (len > 0) {
+    exe[len] = '\0';
+    found = true;
+  }
+#endif
+
+  if (!found) {
     snprintf(lib_path, sizeof(lib_path), "./%s", LIB_NAME);
+    snprintf(lib_copy_path, sizeof(lib_copy_path), "./%s", LIB_COPY_NAME);
     return;
   }
-  exe[len] = '\0';
+
   char *dir = dirname(exe);
   snprintf(lib_path, sizeof(lib_path), "%s/%s", dir, LIB_NAME);
   snprintf(lib_copy_path, sizeof(lib_copy_path), "%s/%s", dir, LIB_COPY_NAME);
