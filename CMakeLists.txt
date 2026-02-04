@@ -24,6 +24,9 @@ target_link_libraries(bullet_hell PRIVATE raylib dl)
 add_custom_command(TARGET bullet_hell POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CMAKE_SOURCE_DIR}/resources ${CMAKE_BINARY_DIR}/resources)
+add_custom_command(TARGET visualizer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/resources ${CMAKE_BINARY_DIR}/resources)
 
 # Platform extras
 if (APPLE)
