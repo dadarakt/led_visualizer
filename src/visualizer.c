@@ -80,7 +80,7 @@ void visualizer_init(VisualizerState *state) {
     offset = 255 * ((float)i / MAX_LIGHTS);
     color = (Color){offset, 255 - offset, offset, 255};
     state->lights[i] =
-        create_light(i, LIGHT_POINT, (Vector3){(float)i / 2.5, 0.5, 2},
+        create_light(i, LIGHT_POINT, (Vector3){(float)i / 10, 0.5, 2},
                      Vector3Zero(), color, 0.02f, 0.5f, state->shader);
   }
 
