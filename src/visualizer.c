@@ -158,9 +158,8 @@ static void led_strip_draw(LedStrip *strip, long t) {
 
   for (int i = 0; i < strip->num_leds; i++) {
     Light *led = &strip->leds[i];
-    // Pulse red-to-blue across the strip
-    float pos = (float)i / (float)(strip->num_leds - 1); // 0..1 along strip
-    float pulse = 0.5f + 0.5f * sinf((float)t * 0.03f - pos * 6.0f);
+    // Pulse red-to-blue horizontally across all strips
+    float pulse = 0.5f + 0.5f * sinf((float)t * 0.03f - led->position.x * 2.0f);
 
     // Heartbeat intensity: double-bump (lub-dub) at ~72 bpm
     float beat_phase = fmodf((float)t * 0.02f, 6.2832f) / 6.2832f; // 0..1
