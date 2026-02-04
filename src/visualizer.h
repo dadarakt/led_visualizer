@@ -3,40 +3,37 @@
 #include "raylib.h"
 #include <stdbool.h>
 
-#define MAX_BULLETS 500000
+#define MAX_LIGHTS 32
 
-typedef struct Bullet {
-  Vector2 position;
-  Vector2 acceleration;
-  bool disabled;
+typedef enum { LIGHT_DIRECTIONAL = 0, LIGHT_POINT } LightType;
+
+typedef struct {
+  int type;
+  bool enabled;
+  Vector3 position;
+  Vector3 target;
   Color color;
-} Bullet;
+  float attenuation;
+  int enabledLoc;
+  int typeLoc;
+  int positionLoc;
+  int targetLoc;
+  int colorLoc;
+  int attenuationLoc;
+  float radius;
+} Light;
 
 typedef struct VisualizerState {
-  Bullet *bullets;
-  int bulletCount;
-  int bulletDisabledCount;
-
-  int bulletRadius;
-  float bulletSpeed;
-  int bulletRows;
-
-  float baseDirection;
-  int angleIncrement;
-  float spawnCooldown;
-  float spawnCooldownTimer;
-
-  float magicCircleRotation;
-
-  RenderTexture bulletTexture;
-  bool drawInPerformanceMode;
+  Camera camera;
+  Shader shader;
+  Light lights[MAX_LIGHTS];
 } VisualizerState;
 
-// Initialize state (allocate bullets, textures, etc.)
+// Initialize state (load shader, create lights, set up camera)
 void visualizer_init(VisualizerState *state);
 
-// Update bullets, input, etc.
+// Update camera, input, light values
 void visualizer_update(VisualizerState *state);
 
-// Draw bullets and UI
+// Draw scene
 void visualizer_draw(VisualizerState *state);

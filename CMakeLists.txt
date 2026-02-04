@@ -20,6 +20,11 @@ add_executable(bullet_hell
 )
 target_link_libraries(bullet_hell PRIVATE raylib dl)
 
+# Copy shader resources to build directory
+add_custom_command(TARGET bullet_hell POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/resources ${CMAKE_BINARY_DIR}/resources)
+
 # Platform extras
 if (APPLE)
     set_target_properties(visualizer PROPERTIES SUFFIX ".dylib")

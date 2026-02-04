@@ -1,133 +1,155 @@
 #include "visualizer.h"
-#include <math.h>
-#include <stdlib.h>
+#include "raymath.h"
+#include <stdio.h>
+#include <string.h>
+
+#define GLSL_VERSION 330
+
+static void update_light_values(Shader shader, Light light) {
+  SetShaderValue(shader, light.enabledLoc, &light.enabled, SHADER_UNIFORM_INT);
+  SetShaderValue(shader, light.typeLoc, &light.type, SHADER_UNIFORM_INT);
+
+  float position[3] = {light.position.x, light.position.y, light.position.z};
+  SetShaderValue(shader, light.positionLoc, position, SHADER_UNIFORM_VEC3);
+
+  float target[3] = {light.target.x, light.target.y, light.target.z};
+  SetShaderValue(shader, light.targetLoc, target, SHADER_UNIFORM_VEC3);
+
+  float color[4] = {
+      (float)light.color.r / 255.0f, (float)light.color.g / 255.0f,
+      (float)light.color.b / 255.0f, (float)light.color.a / 255.0f};
+  SetShaderValue(shader, light.colorLoc, color, SHADER_UNIFORM_VEC4);
+  SetShaderValue(shader, light.attenuationLoc, &light.attenuation,
+                 SHADER_UNIFORM_FLOAT);
+}
+
+static Light create_light(int index, int type, Vector3 position, Vector3 target,
+                          Color color, float radius, float intensity,
+                          Shader shader) {
+  Light light = {0};
+  light.enabled = true;
+  light.type = type;
+  light.position = position;
+  light.target = target;
+  light.color = color;
+  light.radius = radius;
+  light.attenuation = intensity;
+
+  light.enabledLoc =
+      GetShaderLocation(shader, TextFormat("lights[%i].enabled", index));
+  light.typeLoc =
+      GetShaderLocation(shader, TextFormat("lights[%i].type", index));
+  light.positionLoc =
+      GetShaderLocation(shader, TextFormat("lights[%i].position", index));
+  light.targetLoc =
+      GetShaderLocation(shader, TextFormat("lights[%i].target", index));
+  light.colorLoc =
+      GetShaderLocation(shader, TextFormat("lights[%i].color", index));
+  light.attenuationLoc =
+      GetShaderLocation(shader, TextFormat("lights[%i].intensity", index));
+
+  update_light_values(shader, light);
+  return light;
+}
 
 void visualizer_init(VisualizerState *state) {
-  if (!state->bullets) {
-    state->bullets = RL_CALLOC(MAX_BULLETS, sizeof(Bullet));
+  if (state->shader.id != 0) {
+    UnloadShader(state->shader);
   }
 
-  state->bulletRadius = 10;
-  state->bulletSpeed = 3.0f;
-  state->bulletRows = 6;
-  state->spawnCooldown = 2;
-  state->spawnCooldownTimer = state->spawnCooldown;
-  state->angleIncrement = 5;
-  state->drawInPerformanceMode = true;
-  state->baseDirection = 0;
-  state->magicCircleRotation = 0;
+  const char *appDir = GetApplicationDirectory();
+  char vsPath[512], fsPath[512];
+  snprintf(vsPath, sizeof(vsPath), "%sresources/shaders/glsl%i/lighting.vs",
+           appDir, GLSL_VERSION);
+  snprintf(fsPath, sizeof(fsPath), "%sresources/shaders/glsl%i/lighting.fs",
+           appDir, GLSL_VERSION);
 
-  if (state->bulletTexture.id == 0) {
-    state->bulletTexture = LoadRenderTexture(24, 24);
-    BeginTextureMode(state->bulletTexture);
-    DrawCircle(12, 12, (float)state->bulletRadius, WHITE);
-    DrawCircleLines(12, 12, (float)state->bulletRadius, BLACK);
-    EndTextureMode();
+  state->shader = LoadShader(vsPath, fsPath);
+  state->shader.locs[SHADER_LOC_VECTOR_VIEW] =
+      GetShaderLocation(state->shader, "viewPos");
+
+  int ambientLoc = GetShaderLocation(state->shader, "ambient");
+  SetShaderValue(state->shader, ambientLoc, (float[4]){0.1f, 0.1f, 0.1f, 1.0f},
+                 SHADER_UNIFORM_VEC4);
+
+  memset(state->lights, 0, sizeof(state->lights));
+
+  Color color;
+  size_t offset;
+  for (size_t i = 0; i < MAX_LIGHTS; ++i) {
+    offset = 255 * ((float)i / MAX_LIGHTS);
+    color = (Color){offset, 255 - offset, offset, 255};
+    state->lights[i] =
+        create_light(i, LIGHT_POINT, (Vector3){(float)i / 2.5, 0.5, 2},
+                     Vector3Zero(), color, 0.02f, 0.5f, state->shader);
+  }
+
+  if (state->camera.fovy == 0) {
+    state->camera.position = (Vector3){2.0f, 4.0f, 6.0f};
+    state->camera.target = (Vector3){0.0f, 0.5f, 0.0f};
+    state->camera.up = (Vector3){0.0f, 1.0f, 0.0f};
+    state->camera.fovy = 45.0f;
+    state->camera.projection = CAMERA_PERSPECTIVE;
   }
 }
 
 void visualizer_update(VisualizerState *state) {
-  // Spawn bullets
-  state->spawnCooldownTimer--;
-  if (state->spawnCooldownTimer < 0) {
-    state->spawnCooldownTimer = state->spawnCooldown;
-    float degreesPerRow = 360.0f / state->bulletRows;
+  UpdateCamera(&state->camera, CAMERA_FREE);
 
-    for (int row = 0; row < state->bulletRows; row++) {
-      if (state->bulletCount >= MAX_BULLETS)
-        break;
+  float cameraPos[3] = {state->camera.position.x, state->camera.position.y,
+                        state->camera.position.z};
+  SetShaderValue(state->shader, state->shader.locs[SHADER_LOC_VECTOR_VIEW],
+                 cameraPos, SHADER_UNIFORM_VEC3);
 
-      Bullet *b = &state->bullets[state->bulletCount++];
-      b->position = (Vector2){400, 225}; // screen center
-      b->disabled = false;
-      b->color = (row % 2) ? GREEN : SKYBLUE;
-
-      float bulletDirection = state->baseDirection + degreesPerRow * row;
-      b->acceleration =
-          (Vector2){state->bulletSpeed * cosf(bulletDirection * DEG2RAD),
-                    state->bulletSpeed * sinf(bulletDirection * DEG2RAD)};
-    }
-
-    state->baseDirection += state->angleIncrement;
-  }
-
-  // Update bullet positions
-  for (int i = 0; i < state->bulletCount; i++) {
-    Bullet *b = &state->bullets[i];
-    if (!b->disabled) {
-      b->position.x += b->acceleration.x;
-      b->position.y += b->acceleration.y;
-
-      if (b->position.x < -state->bulletRadius * 2 ||
-          b->position.x > 800 + state->bulletRadius * 2 ||
-          b->position.y < -state->bulletRadius * 2 ||
-          b->position.y > 450 + state->bulletRadius * 2) {
-        b->disabled = true;
-        state->bulletDisabledCount++;
-      }
+  if (IsKeyPressed(KEY_SPACE)) {
+    for (size_t i = 0; i < MAX_LIGHTS; ++i) {
+      state->lights[i].enabled = !state->lights[i].enabled;
     }
   }
 
-  // Input adjustments (rows, speed, cooldown, etc.)
-  if ((IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_D)) &&
-      (state->bulletRows < 359))
-    state->bulletRows++;
-  if ((IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A)) &&
-      (state->bulletRows > 1))
-    state->bulletRows--;
-  if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W))
-    state->bulletSpeed += 0.25f;
-  if ((IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S)) &&
-      (state->bulletSpeed > 0.5f))
-    state->bulletSpeed -= 0.25f;
-  if (IsKeyPressed(KEY_Z) && (state->spawnCooldown > 1))
-    state->spawnCooldown--;
-  if (IsKeyPressed(KEY_X))
-    state->spawnCooldown++;
-  if (IsKeyPressed(KEY_ENTER))
-    state->drawInPerformanceMode = !state->drawInPerformanceMode;
-  if (IsKeyPressed(KEY_C)) {
-    state->bulletCount = 0;
-    state->bulletDisabledCount = 0;
-  }
-
-  state->magicCircleRotation++;
+  for (int i = 0; i < MAX_LIGHTS; i++)
+    update_light_values(state->shader, state->lights[i]);
 }
 
 void visualizer_draw(VisualizerState *state) {
   BeginDrawing();
+
   ClearBackground(RAYWHITE);
 
-  // Draw bullets
-  if (state->drawInPerformanceMode) {
-    for (int i = 0; i < state->bulletCount; i++) {
-      Bullet *b = &state->bullets[i];
-      if (!b->disabled) {
-        DrawTexture(
-            state->bulletTexture.texture,
-            (int)(b->position.x - state->bulletTexture.texture.width * 0.5f),
-            (int)(b->position.y - state->bulletTexture.texture.height * 0.5f),
-            b->color);
-      }
-    }
-  } else {
-    for (int i = 0; i < state->bulletCount; i++) {
-      Bullet *b = &state->bullets[i];
-      if (!b->disabled) {
-        DrawCircleV(b->position, (float)state->bulletRadius, b->color);
-        DrawCircleLinesV(b->position, (float)state->bulletRadius, BLACK);
-      }
+  BeginMode3D(state->camera);
+  BeginShaderMode(state->shader);
+
+  DrawPlane(Vector3Zero(), (Vector2){100.0f, 100.0f}, GRAY);
+  DrawCube((Vector3){0, 0, 0}, 2.0f, 4.0f, 2.0f, GRAY);
+  DrawCube((Vector3){6, 0, 0}, 2.0f, 4.0f, 2.0f, GRAY);
+  DrawCube((Vector3){12, 0, 0}, 2.0f, 4.0f, 2.0f, GRAY);
+  DrawCube((Vector3){18, 0, 0}, 2.0f, 4.0f, 2.0f, GRAY);
+
+  EndShaderMode();
+
+  for (int i = 0; i < MAX_LIGHTS; i++) {
+    state->lights[i].color.r += 1;
+    state->lights[i].color.r %= 255;
+    state->lights[i].color.g += 1;
+    state->lights[i].color.g %= 255;
+    state->lights[i].color.b += 1;
+    state->lights[i].color.b %= 255;
+    if (state->lights[i].enabled) {
+      DrawSphereEx(state->lights[i].position, state->lights[i].radius, 8, 8,
+                   state->lights[i].color);
+    } else {
+      DrawSphereWires(state->lights[i].position, state->lights[i].radius, 8, 8,
+                      ColorAlpha(state->lights[i].color, 0.3f));
     }
   }
 
-  // Draw magic circle
-  DrawRectanglePro((Rectangle){400, 225, 120, 120}, (Vector2){60, 60},
-                   state->magicCircleRotation, PURPLE);
-  DrawRectanglePro((Rectangle){400, 225, 120, 120}, (Vector2){60, 60},
-                   state->magicCircleRotation + 45, PURPLE);
-  DrawCircleLines(400, 225, 70, BLACK);
-  DrawCircleLines(400, 225, 50, BLACK);
-  DrawCircleLines(400, 225, 30, BLACK);
+  DrawGrid(100, 1.0f);
+
+  EndMode3D();
+
+  DrawFPS(10, 10);
+
+  DrawText("Use space to toggle lights", 10, 40, 20, DARKGRAY);
 
   EndDrawing();
 }

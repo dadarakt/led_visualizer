@@ -1,10 +1,10 @@
 #include "raylib.h"
 #include "visualizer.h"
 
-#include <stdbool.h>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <libgen.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -91,7 +91,8 @@ static VisualizerAPI load_visualizer(void **handle) {
 int main(void) {
   resolve_lib_path();
 
-  InitWindow(800, 450, "raylib hot reload (visualizer)");
+  SetConfigFlags(FLAG_MSAA_4X_HINT);
+  InitWindow(800, 450, "raylib hot reload - basic lighting");
 
   VisualizerState state = {0};
   void *visualizer_handle = NULL;
