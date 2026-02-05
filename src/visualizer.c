@@ -267,7 +267,7 @@ void visualizer_init(VisualizerState *state) {
                    led_spacing, led_intensity, led_radius);
 
   state->active_program = 0;
-  state->current_program = &programs[0];
+  state->current_program = NULL; // Set by main after loading
   state->active_palette = 0;
   state->current_palette = palette_registry[0].palette;
   state->start_time = GetTime();
@@ -328,13 +328,13 @@ void visualizer_update(VisualizerState *state) {
                  state->deferredShader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos,
                  SHADER_UNIFORM_VEC3);
 
-  if (IsKeyPressed(KEY_P)) {
+  if (IsKeyPressed(KEY_P) && state->programs && state->num_programs > 0) {
     // Cleanup old program if it has a cleanup function
-    if (state->current_program->cleanup) {
+    if (state->current_program && state->current_program->cleanup) {
       state->current_program->cleanup();
     }
-    state->active_program = (state->active_program + 1) % NUM_PROGRAMS;
-    state->current_program = &programs[state->active_program];
+    state->active_program = (state->active_program + 1) % state->num_programs;
+    state->current_program = &state->programs[state->active_program];
     // Initialize new program if it has an init function
     if (state->current_program->init) {
       state->current_program->init();
@@ -372,9 +372,11 @@ void visualizer_update(VisualizerState *state) {
 
   // Update LED colors via current program
   g_strips = state->strips;
-  state->current_program->update(state->num_strips, MAX_LEDS_PER_STRIP,
-                                 state->time_ms, simulator_pixel,
-                                 *state->current_palette);
+  if (state->current_program && state->current_program->update) {
+    state->current_program->update(state->num_strips, MAX_LEDS_PER_STRIP,
+                                   state->time_ms, simulator_pixel,
+                                   *state->current_palette);
+  }
 
   update_light_texture(state);
 }
@@ -511,8 +513,8 @@ void visualizer_draw(VisualizerState *state) {
 
   // === HUD ===
   DrawFPS(10, 10);
-  DrawText(TextFormat("Program: %s (P)", state->current_program->name),
-           10, 40, 20, DARKGRAY);
+  const char *prog_name = state->current_program ? state->current_program->name : "(none)";
+  DrawText(TextFormat("Program: %s (P)", prog_name), 10, 40, 20, DARKGRAY);
   DrawText(TextFormat("Palette: %s (O)", palette_registry[state->active_palette].name),
            10, 65, 20, DARKGRAY);
   DrawText(state->simple_render_mode ? "U: full render" : "U: simple render",

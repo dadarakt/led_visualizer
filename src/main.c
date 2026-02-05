@@ -1,40 +1,50 @@
 #include "raylib.h"
 #include "visualizer.h"
+#include "programs.h"
 
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <libgen.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
-#define LIB_NAME "libvisualizer.dylib"
-#define LIB_COPY_NAME "libvisualizer_live.dylib"
+#define LIB_EXT ".dylib"
 #else
-#define LIB_NAME "libvisualizer.so"
-#define LIB_COPY_NAME "libvisualizer_live.so"
+#define LIB_EXT ".so"
 #endif
 
-typedef struct VisualizerAPI {
-  void (*init)(VisualizerState *);
-  void (*update)(VisualizerState *);
-  void (*draw)(VisualizerState *);
-} VisualizerAPI;
+// Paths resolved at startup
+static char exe_dir[4096];
+static char sdk_header_path[4096];
+static char sdk_source_path[4096];
+static char compiled_lib_path[4096];
+static char source_file_path[4096];
 
-static char lib_path[4096];
-static char lib_copy_path[4096];
+typedef struct {
+  void *handle;
+  const Program *programs;
+  const int *num_programs;
+} LoadedPrograms;
 
-static void resolve_lib_path(void) {
+static void resolve_exe_dir(void) {
   char exe[4096];
   bool found = false;
 
 #ifdef __APPLE__
   uint32_t size = sizeof(exe);
   if (_NSGetExecutablePath(exe, &size) == 0) {
+    char *resolved = realpath(exe, NULL);
+    if (resolved) {
+      strncpy(exe, resolved, sizeof(exe) - 1);
+      free(resolved);
+    }
     found = true;
   }
 #else
@@ -45,113 +55,217 @@ static void resolve_lib_path(void) {
   }
 #endif
 
-  if (!found) {
-    snprintf(lib_path, sizeof(lib_path), "./%s", LIB_NAME);
-    snprintf(lib_copy_path, sizeof(lib_copy_path), "./%s", LIB_COPY_NAME);
-    return;
+  if (found) {
+    char *dir = dirname(exe);
+    strncpy(exe_dir, dir, sizeof(exe_dir) - 1);
+  } else {
+    strncpy(exe_dir, ".", sizeof(exe_dir) - 1);
   }
 
-  char *dir = dirname(exe);
-  snprintf(lib_path, sizeof(lib_path), "%s/%s", dir, LIB_NAME);
-  snprintf(lib_copy_path, sizeof(lib_copy_path), "%s/%s", dir, LIB_COPY_NAME);
+  // SDK files are in sdk/ subdirectory next to executable
+  snprintf(sdk_header_path, sizeof(sdk_header_path), "%s/sdk", exe_dir);
+  snprintf(sdk_source_path, sizeof(sdk_source_path), "%s/sdk/led_viz_sdk.c",
+           exe_dir);
+
+  // Compiled library goes in temp
+  snprintf(compiled_lib_path, sizeof(compiled_lib_path),
+           "/tmp/led_viz_user%s", LIB_EXT);
 }
 
 static time_t get_mtime(const char *path) {
   struct stat st;
-  stat(path, &st);
+  if (stat(path, &st) != 0)
+    return 0;
   return st.st_mtime;
 }
 
-static bool copy_file(const char *src, const char *dst) {
-  int src_fd = open(src, O_RDONLY);
-  if (src_fd < 0)
-    return false;
+static bool compile_source(const char *source_path) {
+  char cmd[8192];
 
-  int dst_fd = open(dst, O_WRONLY | O_CREAT | O_TRUNC, 0755);
-  if (dst_fd < 0) {
-    close(src_fd);
+  // Detect compiler
+  const char *cc = getenv("CC");
+  if (!cc)
+    cc = "cc";
+
+  // Compile user source + SDK source into shared library
+  snprintf(cmd, sizeof(cmd),
+           "%s -shared -fPIC -O2 -o '%s' '%s' '%s' -I'%s' -lm 2>&1", cc,
+           compiled_lib_path, source_path, sdk_source_path, sdk_header_path);
+
+  TraceLog(LOG_INFO, "Compiling: %s", cmd);
+
+  FILE *fp = popen(cmd, "r");
+  if (!fp) {
+    TraceLog(LOG_ERROR, "Failed to run compiler");
     return false;
   }
 
-  char buf[65536];
-  ssize_t n;
-  while ((n = read(src_fd, buf, sizeof(buf))) > 0) {
-    if (write(dst_fd, buf, n) != n) {
-      close(src_fd);
-      close(dst_fd);
-      return false;
-    }
+  char output[4096] = {0};
+  size_t total = 0;
+  char buf[256];
+  while (fgets(buf, sizeof(buf), fp) && total < sizeof(output) - 1) {
+    size_t len = strlen(buf);
+    memcpy(output + total, buf, len);
+    total += len;
+  }
+  output[total] = '\0';
+
+  int status = pclose(fp);
+  if (status != 0) {
+    TraceLog(LOG_ERROR, "Compilation failed:\n%s", output);
+    return false;
   }
 
-  close(src_fd);
-  close(dst_fd);
-  return n == 0;
+  if (total > 0) {
+    TraceLog(LOG_WARNING, "Compiler output:\n%s", output);
+  }
+
+  TraceLog(LOG_INFO, "Compilation successful");
+  return true;
 }
 
-static VisualizerAPI load_visualizer(void **handle) {
-  VisualizerAPI api = {0};
+static LoadedPrograms load_programs(void) {
+  LoadedPrograms loaded = {0};
 
-  if (!copy_file(lib_path, lib_copy_path)) {
-    TraceLog(LOG_ERROR, "Failed to copy %s", lib_path);
-    return api;
+  loaded.handle = dlopen(compiled_lib_path, RTLD_NOW);
+  if (!loaded.handle) {
+    TraceLog(LOG_ERROR, "dlopen failed: %s", dlerror());
+    return loaded;
   }
 
-  *handle = dlopen(lib_copy_path, RTLD_NOW);
-  if (!*handle) {
-    TraceLog(LOG_ERROR, dlerror());
-    return api;
+  loaded.programs = dlsym(loaded.handle, "programs");
+  loaded.num_programs = dlsym(loaded.handle, "NUM_PROGRAMS");
+
+  if (!loaded.programs || !loaded.num_programs) {
+    TraceLog(LOG_ERROR,
+             "Missing symbols. Make sure your file defines:\n"
+             "  const Program programs[] = { ... };\n"
+             "  const int NUM_PROGRAMS = ...;");
+    dlclose(loaded.handle);
+    loaded.handle = NULL;
+    return loaded;
   }
 
-  api.init = dlsym(*handle, "visualizer_init");
-  api.update = dlsym(*handle, "visualizer_update");
-  api.draw = dlsym(*handle, "visualizer_draw");
-
-  return api;
+  TraceLog(LOG_INFO, "Loaded %d program(s)", *loaded.num_programs);
+  return loaded;
 }
 
-int main(void) {
-  resolve_lib_path();
+static void unload_programs(LoadedPrograms *loaded) {
+  if (loaded->handle) {
+    dlclose(loaded->handle);
+    loaded->handle = NULL;
+    loaded->programs = NULL;
+    loaded->num_programs = NULL;
+  }
+}
 
+static void print_usage(const char *prog) {
+  fprintf(stderr, "LED Visualizer - Hot-reloading LED program simulator\n\n");
+  fprintf(stderr, "Usage: %s <programs.c>\n\n", prog);
+  fprintf(stderr, "Arguments:\n");
+  fprintf(stderr, "  programs.c    Path to your LED programs source file\n\n");
+  fprintf(stderr, "Example:\n");
+  fprintf(stderr, "  %s ./my_project/src/programs.c\n\n", prog);
+  fprintf(stderr, "The source file should include <led_viz.h> and define:\n");
+  fprintf(stderr, "  const Program programs[] = { ... };\n");
+  fprintf(stderr, "  const int NUM_PROGRAMS = ...;\n");
+}
+
+int main(int argc, char *argv[]) {
+  // Parse arguments
+  if (argc < 2) {
+    print_usage(argv[0]);
+    return 1;
+  }
+
+  // Handle help flag
+  if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
+    print_usage(argv[0]);
+    return 0;
+  }
+
+  // Resolve paths
+  resolve_exe_dir();
+
+  // Get absolute path to source file
+  char *resolved = realpath(argv[1], NULL);
+  if (!resolved) {
+    fprintf(stderr, "Error: Cannot find source file: %s\n", argv[1]);
+    return 1;
+  }
+  strncpy(source_file_path, resolved, sizeof(source_file_path) - 1);
+  free(resolved);
+
+  // Check SDK files exist
+  if (access(sdk_source_path, R_OK) != 0) {
+    fprintf(stderr, "Error: SDK not found at %s\n", sdk_header_path);
+    fprintf(stderr, "Make sure the 'sdk' folder is next to the executable.\n");
+    return 1;
+  }
+
+  // Initial compilation
+  if (!compile_source(source_file_path)) {
+    fprintf(stderr, "Initial compilation failed. Fix errors and restart.\n");
+    return 1;
+  }
+
+  // Initialize window
   SetConfigFlags(FLAG_MSAA_4X_HINT);
-  InitWindow(1280, 720, "raylib hot reload - basic lighting");
-
-  VisualizerState state = {0};
-  void *visualizer_handle = NULL;
-  VisualizerAPI visualizer = load_visualizer(&visualizer_handle);
-
-  if (visualizer.init)
-    visualizer.init(&state);
-
-  time_t last_write = get_mtime(lib_path);
-
+  InitWindow(1280, 720, "LED Visualizer");
   SetTargetFPS(60);
 
+  // Load visualizer state
+  VisualizerState state = {0};
+  visualizer_init(&state);
+
+  // Load user programs
+  LoadedPrograms loaded = load_programs();
+  time_t last_mtime = get_mtime(source_file_path);
+
   while (!WindowShouldClose()) {
-    time_t write = get_mtime(lib_path);
-    if (write != last_write) {
-      // Wait for the linker to finish writing the .so file.
-      // The mtime changes as soon as the linker starts writing,
-      // but the file may not be complete yet.
+    // Check for source file changes
+    time_t current_mtime = get_mtime(source_file_path);
+    if (current_mtime != last_mtime) {
+      TraceLog(LOG_INFO, "Source file changed, recompiling...");
+
+      // Small delay for editor to finish writing
       usleep(100000);
 
-      TraceLog(LOG_INFO, "Reloading visualizer code");
+      if (compile_source(source_file_path)) {
+        unload_programs(&loaded);
+        loaded = load_programs();
 
-      dlclose(visualizer_handle);
-      visualizer = load_visualizer(&visualizer_handle);
+        // Reset to first program if current is out of range
+        if (loaded.num_programs &&
+            state.active_program >= *loaded.num_programs) {
+          state.active_program = 0;
+        }
+      }
 
-      if (visualizer.init)
-        visualizer.init(&state);
-
-      last_write = write;
+      last_mtime = get_mtime(source_file_path);
     }
 
-    if (visualizer.update)
-      visualizer.update(&state);
+    // Update programs in state from loaded programs
+    if (loaded.programs && loaded.num_programs && *loaded.num_programs > 0) {
+      state.programs = loaded.programs;
+      state.num_programs = *loaded.num_programs;
 
-    if (visualizer.draw)
-      visualizer.draw(&state);
+      // Clamp program index
+      if (state.active_program >= state.num_programs) {
+        state.active_program = 0;
+      }
+      state.current_program = &state.programs[state.active_program];
+    } else {
+      state.programs = NULL;
+      state.num_programs = 0;
+      state.current_program = NULL;
+    }
+
+    visualizer_update(&state);
+    visualizer_draw(&state);
   }
 
-  dlclose(visualizer_handle);
+  unload_programs(&loaded);
   CloseWindow();
+  return 0;
 }

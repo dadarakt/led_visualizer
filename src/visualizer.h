@@ -60,6 +60,9 @@ typedef struct VisualizerState {
   double time_ms;
   double last_frame_time;
   double smoothed_delta;
+  // Programs (loaded dynamically)
+  const Program *programs;
+  int num_programs;
   int active_program;
   const Program *current_program;
   int active_palette;

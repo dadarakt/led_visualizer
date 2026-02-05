@@ -81,9 +81,8 @@ static void comet_update(int num_strips, int num_leds, double time_ms,
         brightness = brightness * brightness; // smooth falloff
       }
 
-      // Use palette - head is bright, tail fades through palette
-      uint8_t index =
-          (uint8_t)(dist / tail_length * 128.0f); // 0-128 along tail
+      // Use palette - head gets bright end (index 255), tail fades toward 0
+      uint8_t index = (uint8_t)(255.0f - dist / tail_length * 128.0f);
       CRGB color = ColorFromPalette(palette, index, (uint8_t)(brightness * 255),
                                     LINEARBLEND);
       pixel(s, i, &color.r, &color.g, &color.b);
