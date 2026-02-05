@@ -37,13 +37,13 @@ typedef struct {
   Light leds[MAX_LEDS_PER_STRIP];
 } LedStrip;
 
-typedef void (*ColorProgram)(LedStrip *strips, int num_strips, int strip_index,
-                             int led_index, long t);
-
 typedef struct {
   Vector3 pos;
   float phase; // bob phase offset
 } Person;
+
+// Forward declaration for Program (defined in programs.h)
+typedef struct Program Program;
 
 typedef struct VisualizerState {
   Camera camera;
@@ -55,9 +55,10 @@ typedef struct VisualizerState {
   int lightTexWidth;
   int num_strips;
   LedStrip strips[MAX_STRIPS];
-  long t;
+  double start_time;
+  double time_ms;
   int active_program;
-  ColorProgram color_program;
+  const Program *current_program;
   Person people[NUM_PEOPLE];
 } VisualizerState;
 

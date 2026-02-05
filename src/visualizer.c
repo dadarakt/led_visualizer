@@ -1,4 +1,5 @@
 #include "visualizer.h"
+#include "programs.h"
 #include "raymath.h"
 #include "rlgl.h"
 #include <math.h>
@@ -11,51 +12,6 @@
 // Light texture width: 2 pixels per light (pos+intensity, color+enabled)
 // We cluster LEDs into groups to reduce shader light count
 #define LIGHT_TEX_WIDTH (MAX_TOTAL_SHADER_LIGHTS * 2)
-
-// --- Color programs ---
-
-static void program_heartbeat_pulse(LedStrip *strips, int num_strips,
-                                    int strip_index, int led_index, long t) {
-  Light *led = &strips[strip_index].leds[led_index];
-  float pulse = 0.5f + 0.5f * sinf((float)t * 0.03f - led->position.x * 2.0f);
-
-  float beat_phase = fmodf((float)t * 0.02f, 6.2832f) / 6.2832f;
-  float lub = expf(-powf((beat_phase - 0.15f) * 12.0f, 2.0f));
-  float dub = expf(-powf((beat_phase - 0.35f) * 12.0f, 2.0f));
-  float heartbeat = 0.6f + 0.4f * fmaxf(lub, dub);
-
-  led->color.r = (unsigned char)(255.0f * (1.0f - pulse) * heartbeat);
-  led->color.g = 0;
-  led->color.b = (unsigned char)(255.0f * pulse * heartbeat);
-}
-
-static void program_rainbow(LedStrip *strips, int num_strips, int strip_index,
-                            int led_index, long t) {
-  Light *led = &strips[strip_index].leds[led_index];
-  float phase = (float)t * 0.05f;
-  float offset =
-      (float)led_index / (float)strips[strip_index].num_leds * 6.2832f;
-  led->color.r = (unsigned char)(127.5f + 127.5f * sinf(phase + offset));
-  led->color.g =
-      (unsigned char)(127.5f + 127.5f * sinf(phase + offset + 2.094f));
-  led->color.b =
-      (unsigned char)(127.5f + 127.5f * sinf(phase + offset + 4.189f));
-}
-
-static void program_solid_white(LedStrip *strips, int num_strips,
-                                int strip_index, int led_index, long t) {
-  (void)num_strips;
-  (void)t;
-  Light *led = &strips[strip_index].leds[led_index];
-  led->color.r = 255;
-  led->color.g = 255;
-  led->color.b = 255;
-}
-
-static ColorProgram programs[] = {program_heartbeat_pulse, program_rainbow,
-                                  program_solid_white};
-static const char *program_names[] = {"Heartbeat", "Rainbow", "Solid White"};
-static const int NUM_PROGRAMS = 3;
 
 static void led_strip_create(LedStrip *strip, int num_leds, Vector3 position,
                              Vector3 rotation, float spacing, float intensity,
@@ -144,10 +100,11 @@ static void update_light_texture(VisualizerState *state) {
                  SHADER_UNIFORM_INT);
 }
 
-static void draw_person(Person *p, long t) {
+static void draw_person(Person *p, double time_ms) {
   float x = p->pos.x;
   float z = p->pos.z;
-  float bob = 0.03f * sinf((float)t * 0.08f + p->phase);
+  float t = (float)(time_ms / 1000.0);
+  float bob = 0.03f * sinf(t * 5.0f + p->phase);
   float y_off = bob;
 
   // Body
@@ -160,7 +117,7 @@ static void draw_person(Person *p, long t) {
   DrawCube((Vector3){x + 0.1f, 0.4f - knee_bend, z}, 0.12f, 0.8f, 0.15f, GRAY);
 
   // Arms — slight offset from body bob
-  float arm_bob = 0.03f * sinf((float)t * 0.08f + p->phase + 0.5f);
+  float arm_bob = 0.03f * sinf(t * 5.0f + p->phase + 0.5f);
   DrawCube((Vector3){x - 0.27f, 1.05f + arm_bob, z}, 0.1f, 0.65f, 0.1f, GRAY);
   DrawCube((Vector3){x + 0.27f, 1.05f + arm_bob, z}, 0.1f, 0.65f, 0.1f, GRAY);
 }
@@ -278,24 +235,26 @@ void visualizer_init(VisualizerState *state) {
   // 4 strips evenly spaced across the 5m back wall (X: -2.5 to 2.5)
   state->num_strips = 4;
   led_strip_create(
-      &state->strips[0], MAX_LEDS_PER_STRIP, (Vector3){-1.875f, 1.0f, -2.5f},
+      &state->strips[0], MAX_LEDS_PER_STRIP, (Vector3){-1.875f, 1.0f, -2.95f},
       (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity, led_radius);
   led_strip_create(
-      &state->strips[1], MAX_LEDS_PER_STRIP, (Vector3){-0.625f, 1.0f, -2.5f},
+      &state->strips[1], MAX_LEDS_PER_STRIP, (Vector3){-0.625f, 1.0f, -2.95f},
       (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity, led_radius);
-  led_strip_create(&state->strips[2], MAX_LEDS_PER_STRIP,
-                   (Vector3){0.625f, 1.0f, -2.5f}, (Vector3){0.0f, 0.0f, 90.0f},
-                   led_spacing, led_intensity, led_radius);
-  led_strip_create(&state->strips[3], MAX_LEDS_PER_STRIP,
-                   (Vector3){1.875f, 1.0f, -2.5f}, (Vector3){0.0f, 0.0f, 90.0f},
-                   led_spacing, led_intensity, led_radius);
+  led_strip_create(
+      &state->strips[2], MAX_LEDS_PER_STRIP, (Vector3){0.625f, 1.0f, -2.95f},
+      (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity, led_radius);
+  led_strip_create(
+      &state->strips[3], MAX_LEDS_PER_STRIP, (Vector3){1.875f, 1.0f, -2.95f},
+      (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity, led_radius);
 
   state->active_program = 0;
-  state->color_program = programs[0];
+  state->current_program = &programs[0];
+  state->start_time = GetTime();
+  state->time_ms = 0;
 
   state->camera_mode = CAMERA_CUSTOM;
   if (state->camera.fovy == 0) {
-    state->camera.position = (Vector3){0.0f, 1.5f, 0.5f};
+    state->camera.position = (Vector3){0.0f, 1.5f, -1.0f};
     state->camera.target = (Vector3){0.0f, 1.5f, -2.5f};
     state->camera.up = (Vector3){0.0f, 1.0f, 0.0f};
     state->camera.fovy = 70.0f;
@@ -320,7 +279,8 @@ void visualizer_init(VisualizerState *state) {
 }
 
 void visualizer_update(VisualizerState *state) {
-  // UpdateCamera(&state->camera, CAMERA_FIRST_PERSON);
+  // Update time
+  state->time_ms = (GetTime() - state->start_time) * 1000.0;
 
   float cameraPos[3] = {state->camera.position.x, state->camera.position.y,
                         state->camera.position.z};
@@ -329,8 +289,16 @@ void visualizer_update(VisualizerState *state) {
                  SHADER_UNIFORM_VEC3);
 
   if (IsKeyPressed(KEY_P)) {
+    // Cleanup old program if it has a cleanup function
+    if (state->current_program->cleanup) {
+      state->current_program->cleanup();
+    }
     state->active_program = (state->active_program + 1) % NUM_PROGRAMS;
-    state->color_program = programs[state->active_program];
+    state->current_program = &programs[state->active_program];
+    // Initialize new program if it has an init function
+    if (state->current_program->init) {
+      state->current_program->init();
+    }
   }
 
   if (IsKeyPressed(KEY_T)) {
@@ -342,8 +310,8 @@ void visualizer_update(VisualizerState *state) {
   }
 
   if (IsKeyPressed(KEY_X)) {
-    if (state->camera_mode == CAMERA_CUSTOM) {
-      state->camera_mode = CAMERA_FIRST_PERSON;
+    if (state->camera_mode == CAMERA_FIRST_PERSON) {
+      state->camera_mode = CAMERA_CUSTOM;
     } else {
       state->camera_mode = CAMERA_FIRST_PERSON;
     }
@@ -353,30 +321,24 @@ void visualizer_update(VisualizerState *state) {
     UpdateCamera(&state->camera, CAMERA_FIRST_PERSON);
   }
 
-  // Update LED colors via color program (done in draw for visual LEDs,
-  // but we need to update for the SSBO here)
-  for (int s = 0; s < state->num_strips; s++) {
-    for (int i = 0; i < state->strips[s].num_leds; i++) {
-      state->color_program(state->strips, state->num_strips, s, i, state->t);
-    }
-  }
+  // Update LED colors via current program
+  state->current_program->update(state->strips, state->num_strips,
+                                 state->time_ms);
 
   update_light_texture(state);
-
-  state->t += 1;
 }
 
 static void draw_scene_geometry(VisualizerState *state) {
   // Room: 5m (X) x 3m (Y) x 6m (Z), centered at origin
-  DrawPlane((Vector3){0.0f, 0.0f, 0.0f}, (Vector2){5.0f, 6.0f}, GRAY);
-  DrawCube((Vector3){0.0f, 3.0f, 0.0f}, 5.0f, 0.01f, 6.0f, DARKGRAY);
-  DrawCube((Vector3){0.0f, 1.5f, -3.0f}, 5.0f, 3.0f, 0.01f, DARKGRAY);
-  DrawCube((Vector3){-2.5f, 1.5f, 0.0f}, 0.01f, 3.0f, 6.0f, DARKGRAY);
-  DrawCube((Vector3){2.5f, 1.5f, 0.0f}, 0.01f, 3.0f, 6.0f, DARKGRAY);
-  DrawCube((Vector3){0.0f, 1.5f, 3.0f}, 5.0f, 3.0f, 0.01f, DARKGRAY);
+  DrawPlane((Vector3){0.0f, 0.0f, 0.0f}, (Vector2){5.0f, 6.0f}, WHITE);
+  DrawCube((Vector3){0.0f, 3.0f, 0.0f}, 5.0f, 0.01f, 6.0f, GRAY);
+  DrawCube((Vector3){0.0f, 1.5f, -3.0f}, 5.0f, 3.0f, 0.01f, GRAY);
+  DrawCube((Vector3){-2.5f, 1.5f, 0.0f}, 0.01f, 3.0f, 6.0f, GRAY);
+  DrawCube((Vector3){2.5f, 1.5f, 0.0f}, 0.01f, 3.0f, 6.0f, GRAY);
+  DrawCube((Vector3){0.0f, 1.5f, 3.0f}, 5.0f, 3.0f, 0.01f, GRAY);
 
   for (int p = 0; p < NUM_PEOPLE; p++) {
-    draw_person(&state->people[p], state->t);
+    draw_person(&state->people[p], state->time_ms);
   }
 
   // LED strip housings
@@ -477,8 +439,7 @@ void visualizer_draw(VisualizerState *state) {
 
   // === HUD ===
   DrawFPS(10, 10);
-  DrawText(TextFormat("Program: %s (P to cycle)",
-                      program_names[state->active_program]),
+  DrawText(TextFormat("Program: %s (P to cycle)", state->current_program->name),
            10, 40, 20, DARKGRAY);
   DrawText("T to toggle lights", 10, 65, 20, DARKGRAY);
   DrawText(TextFormat("Lights: %d", state->num_strips * MAX_LEDS_PER_STRIP), 10,

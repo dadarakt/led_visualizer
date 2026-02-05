@@ -11,6 +11,7 @@ add_subdirectory(extern/raylib)
 
 add_library(visualizer SHARED
     src/visualizer.c
+    src/programs.c
 )
 target_link_libraries(visualizer PRIVATE raylib)
 
