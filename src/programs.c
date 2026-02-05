@@ -3,7 +3,7 @@
 #include <stddef.h>
 
 static void heartbeat_update(int num_strips, int num_leds, double time_ms,
-                             PixelFunc pixel) {
+                             PixelFunc pixel, const CRGBPalette16 palette) {
   double t = time_ms / 1000.0;
 
   double beat_period = 60.0 / 72.0; // ~72 bpm
@@ -14,38 +14,36 @@ static void heartbeat_update(int num_strips, int num_leds, double time_ms,
 
   for (int s = 0; s < num_strips; s++) {
     for (int i = 0; i < num_leds; i++) {
-      // Use led index for horizontal gradient (0 to 1 across strip)
-      float pos = (float)i / (float)num_leds;
-      float pulse = 0.5f + 0.5f * sinf((float)(t * 2.0) - pos * 6.28f);
+      // Use led index for position in palette (0-255)
+      uint8_t index = (uint8_t)((float)i / (float)num_leds * 255.0f +
+                                t * 50.0f); // scroll over time
+      uint8_t brightness = (uint8_t)(255.0f * heartbeat);
+      CRGB color = ColorFromPalette(palette, index, brightness, LINEARBLEND);
 
-      uint8_t r = (uint8_t)(255.0f * (1.0f - pulse) * heartbeat);
-      uint8_t g = 0;
-      uint8_t b = (uint8_t)(255.0f * pulse * heartbeat);
-      pixel(s, i, &r, &g, &b);
+      pixel(s, i, &color.r, &color.g, &color.b);
     }
   }
 }
 
 static void rainbow_update(int num_strips, int num_leds, double time_ms,
-                           PixelFunc pixel) {
+                           PixelFunc pixel, const CRGBPalette16 palette) {
   float t = (float)(time_ms / 1000.0);
 
   for (int s = 0; s < num_strips; s++) {
     for (int i = 0; i < num_leds; i++) {
-      float phase = t * 3.0f;
-      float offset = (float)i / (float)num_leds * 6.2832f;
-
-      uint8_t r = (uint8_t)(127.5f + 127.5f * sinf(phase + offset));
-      uint8_t g = (uint8_t)(127.5f + 127.5f * sinf(phase + offset + 2.094f));
-      uint8_t b = (uint8_t)(127.5f + 127.5f * sinf(phase + offset + 4.189f));
-      pixel(s, i, &r, &g, &b);
+      // Scroll through palette over time
+      uint8_t index =
+          (uint8_t)((float)i / (float)num_leds * 255.0f + t * 60.0f);
+      CRGB color = ColorFromPalette(palette, index, 255, LINEARBLEND);
+      pixel(s, i, &color.r, &color.g, &color.b);
     }
   }
 }
 
 static void solid_white_update(int num_strips, int num_leds, double time_ms,
-                               PixelFunc pixel) {
+                               PixelFunc pixel, const CRGBPalette16 palette) {
   (void)time_ms;
+  (void)palette;
 
   for (int s = 0; s < num_strips; s++) {
     for (int i = 0; i < num_leds; i++) {
@@ -56,15 +54,15 @@ static void solid_white_update(int num_strips, int num_leds, double time_ms,
 }
 
 static void comet_update(int num_strips, int num_leds, double time_ms,
-                         PixelFunc pixel) {
+                         PixelFunc pixel, const CRGBPalette16 palette) {
   float t = (float)(time_ms / 1000.0);
   float tail_length = 25.0f;
 
   for (int s = 0; s < num_strips; s++) {
     // Pseudo-random per-strip values based on strip index
     unsigned int seed = (unsigned int)(s * 2654435761u);
-    float speed = 0.3f + (float)(seed % 100) / 200.0f;        // 0.3 - 0.8
-    float phase_offset = (float)(seed % 1000) / 1000.0f;      // 0.0 - 1.0
+    float speed = 0.3f + (float)(seed % 100) / 200.0f;   // 0.3 - 0.8
+    float phase_offset = (float)(seed % 1000) / 1000.0f; // 0.0 - 1.0
 
     // Position of comet head moving top to bottom (high index to low)
     float cycle_pos = fmodf(t * speed + phase_offset, 1.0f);
@@ -83,8 +81,12 @@ static void comet_update(int num_strips, int num_leds, double time_ms,
         brightness = brightness * brightness; // smooth falloff
       }
 
-      uint8_t val = (uint8_t)(255.0f * brightness);
-      pixel(s, i, &val, &val, &val);
+      // Use palette - head is bright, tail fades through palette
+      uint8_t index =
+          (uint8_t)(dist / tail_length * 128.0f); // 0-128 along tail
+      CRGB color = ColorFromPalette(palette, index, (uint8_t)(brightness * 255),
+                                    LINEARBLEND);
+      pixel(s, i, &color.r, &color.g, &color.b);
     }
   }
 }

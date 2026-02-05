@@ -268,6 +268,8 @@ void visualizer_init(VisualizerState *state) {
 
   state->active_program = 0;
   state->current_program = &programs[0];
+  state->active_palette = 0;
+  state->current_palette = palette_registry[0].palette;
   state->start_time = GetTime();
   state->time_ms = 0;
   state->last_frame_time = state->start_time;
@@ -359,6 +361,11 @@ void visualizer_update(VisualizerState *state) {
     state->simple_render_mode = !state->simple_render_mode;
   }
 
+  if (IsKeyPressed(KEY_O)) {
+    state->active_palette = (state->active_palette + 1) % NUM_PALETTES;
+    state->current_palette = palette_registry[state->active_palette].palette;
+  }
+
   if (state->camera_mode == CAMERA_FIRST_PERSON) {
     UpdateCamera(&state->camera, CAMERA_FIRST_PERSON);
   }
@@ -366,7 +373,8 @@ void visualizer_update(VisualizerState *state) {
   // Update LED colors via current program
   g_strips = state->strips;
   state->current_program->update(state->num_strips, MAX_LEDS_PER_STRIP,
-                                 state->time_ms, simulator_pixel);
+                                 state->time_ms, simulator_pixel,
+                                 *state->current_palette);
 
   update_light_texture(state);
 }
@@ -503,12 +511,12 @@ void visualizer_draw(VisualizerState *state) {
 
   // === HUD ===
   DrawFPS(10, 10);
-  DrawText(TextFormat("Program: %s (P to cycle)", state->current_program->name),
+  DrawText(TextFormat("Program: %s (P)", state->current_program->name),
            10, 40, 20, DARKGRAY);
-  DrawText(state->simple_render_mode ? "U: full render" : "U: simple render",
+  DrawText(TextFormat("Palette: %s (O)", palette_registry[state->active_palette].name),
            10, 65, 20, DARKGRAY);
-  DrawText(TextFormat("Lights: %d", state->num_strips * MAX_LEDS_PER_STRIP), 10,
-           90, 20, DARKGRAY);
+  DrawText(state->simple_render_mode ? "U: full render" : "U: simple render",
+           10, 90, 20, DARKGRAY);
 
   EndDrawing();
 }

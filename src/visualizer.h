@@ -1,5 +1,6 @@
 
 #pragma once
+#include "palette.h"
 #include "raylib.h"
 #include <stdbool.h>
 
@@ -61,6 +62,8 @@ typedef struct VisualizerState {
   double smoothed_delta;
   int active_program;
   const Program *current_program;
+  int active_palette;
+  const CRGBPalette16 *current_palette;
   Person people[NUM_PEOPLE];
   bool simple_render_mode;
 } VisualizerState;
