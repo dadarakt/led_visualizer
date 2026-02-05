@@ -275,21 +275,22 @@ void visualizer_init(VisualizerState *state) {
   float led_radius = 0.004f;
   float led_intensity = 0.0015f;
 
+  // 4 strips evenly spaced across the 5m back wall (X: -2.5 to 2.5)
   state->num_strips = 4;
   led_strip_create(&state->strips[0], MAX_LEDS_PER_STRIP,
-                   (Vector3){-10.0f / 6.0f, 1.0f, -2.5f},
+                   (Vector3){-1.875f, 1.0f, -2.5f},
                    (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity,
                    led_radius);
   led_strip_create(&state->strips[1], MAX_LEDS_PER_STRIP,
-                   (Vector3){-5.0f / 6.0f, 1.0f, -2.5f},
+                   (Vector3){-0.625f, 1.0f, -2.5f},
                    (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity,
                    led_radius);
   led_strip_create(&state->strips[2], MAX_LEDS_PER_STRIP,
-                   (Vector3){5.0f / 6.0f, 1.0f, -2.5f},
+                   (Vector3){0.625f, 1.0f, -2.5f},
                    (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity,
                    led_radius);
   led_strip_create(&state->strips[3], MAX_LEDS_PER_STRIP,
-                   (Vector3){10.0f / 6.0f, 1.0f, -2.5f},
+                   (Vector3){1.875f, 1.0f, -2.5f},
                    (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity,
                    led_radius);
 
@@ -297,19 +298,25 @@ void visualizer_init(VisualizerState *state) {
   state->color_program = programs[0];
 
   if (state->camera.fovy == 0) {
-    state->camera.position = (Vector3){0.5f, 1.6f, 2.5f};
-    state->camera.target = (Vector3){0.0f, 1.0f, -1.0f};
+    state->camera.position = (Vector3){0.0f, 1.5f, 0.5f};
+    state->camera.target = (Vector3){0.0f, 1.5f, -2.5f};
     state->camera.up = (Vector3){0.0f, 1.0f, 0.0f};
-    state->camera.fovy = 45.0f;
+    state->camera.fovy = 70.0f;
     state->camera.projection = CAMERA_PERSPECTIVE;
   }
 
+  // Place people to the sides, avoiding the center view
   srand(42);
   for (int i = 0; i < NUM_PEOPLE; i++) {
+    float x = -2.0f + 4.0f * ((float)rand() / (float)RAND_MAX);
+    // Push people away from center (|x| < 1.0)
+    if (fabsf(x) < 1.0f) {
+      x = (x < 0) ? x - 1.2f : x + 1.2f;
+    }
     state->people[i].pos = (Vector3){
-        -2.0f + 4.0f * ((float)rand() / (float)RAND_MAX),
+        x,
         0.0f,
-        -2.5f + 5.0f * ((float)rand() / (float)RAND_MAX),
+        -2.0f + 3.5f * ((float)rand() / (float)RAND_MAX),
     };
     state->people[i].phase = 6.2832f * ((float)rand() / (float)RAND_MAX);
   }
