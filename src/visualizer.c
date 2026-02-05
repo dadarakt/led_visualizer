@@ -1,10 +1,16 @@
 #include "visualizer.h"
 #include "raymath.h"
+#include "rlgl.h"
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define GLSL_VERSION 330
+
+// Light texture width: 2 pixels per light (pos+intensity, color+enabled)
+// We cluster LEDs into groups to reduce shader light count
+#define LIGHT_TEX_WIDTH (MAX_TOTAL_SHADER_LIGHTS * 2)
 
 // --- Color programs ---
 
@@ -51,214 +57,240 @@ static ColorProgram programs[] = {program_heartbeat_pulse, program_rainbow,
 static const char *program_names[] = {"Heartbeat", "Rainbow", "Solid White"};
 static const int NUM_PROGRAMS = 3;
 
-static void update_light_values(Shader shader, Light light) {
-  SetShaderValue(shader, light.enabledLoc, &light.enabled, SHADER_UNIFORM_INT);
-  SetShaderValue(shader, light.typeLoc, &light.type, SHADER_UNIFORM_INT);
-
-  float position[3] = {light.position.x, light.position.y, light.position.z};
-  SetShaderValue(shader, light.positionLoc, position, SHADER_UNIFORM_VEC3);
-
-  float target[3] = {light.target.x, light.target.y, light.target.z};
-  SetShaderValue(shader, light.targetLoc, target, SHADER_UNIFORM_VEC3);
-
-  float color[4] = {
-      (float)light.color.r / 255.0f, (float)light.color.g / 255.0f,
-      (float)light.color.b / 255.0f, (float)light.color.a / 255.0f};
-  SetShaderValue(shader, light.colorLoc, color, SHADER_UNIFORM_VEC4);
-  SetShaderValue(shader, light.attenuationLoc, &light.attenuation,
-                 SHADER_UNIFORM_FLOAT);
-}
-
-static Light create_light(int index, int type, Vector3 position, Vector3 target,
-                          Color color, float radius, float intensity,
-                          Shader shader) {
-  Light light = {0};
-  light.enabled = true;
-  light.type = type;
-  light.position = position;
-  light.target = target;
-  light.color = color;
-  light.radius = radius;
-  light.attenuation = intensity;
-
-  light.enabledLoc =
-      GetShaderLocation(shader, TextFormat("lights[%i].enabled", index));
-  light.typeLoc =
-      GetShaderLocation(shader, TextFormat("lights[%i].type", index));
-  light.positionLoc =
-      GetShaderLocation(shader, TextFormat("lights[%i].position", index));
-  light.targetLoc =
-      GetShaderLocation(shader, TextFormat("lights[%i].target", index));
-  light.colorLoc =
-      GetShaderLocation(shader, TextFormat("lights[%i].color", index));
-  light.attenuationLoc =
-      GetShaderLocation(shader, TextFormat("lights[%i].intensity", index));
-
-  update_light_values(shader, light);
-  return light;
-}
-
-static void led_strip_create(LedStrip *strip, Shader shader, int base_index,
-                             int num_leds, int leds_per_light, Vector3 position,
+static void led_strip_create(LedStrip *strip, int num_leds, Vector3 position,
                              Vector3 rotation, float spacing, float intensity,
                              float radius) {
   strip->num_leds = num_leds;
-  strip->base_index = base_index;
-  strip->leds_per_light = leds_per_light;
-  strip->num_shader_lights = num_leds / leds_per_light;
   strip->position = position;
   strip->rotation = rotation;
   strip->spacing = spacing;
   strip->intensity = intensity;
   strip->radius = radius;
   memset(strip->leds, 0, sizeof(strip->leds));
-  memset(strip->shader_lights, 0, sizeof(strip->shader_lights));
 
   Matrix rot = MatrixRotateXYZ((Vector3){
       rotation.x * DEG2RAD, rotation.y * DEG2RAD, rotation.z * DEG2RAD});
 
-  // Create visual LEDs at full resolution (no shader locations needed)
   for (int i = 0; i < num_leds; i++) {
     Vector3 local_pos = {(float)i * spacing, 0.0f, 0.0f};
     Vector3 world_pos = Vector3Add(position, Vector3Transform(local_pos, rot));
 
-    size_t offset = 255 * ((float)i / num_leds);
-    Color color = {offset, 255 - offset, offset, 255};
-
     strip->leds[i] = (Light){
         .enabled = true,
-        .type = LIGHT_POINT,
         .position = world_pos,
-        .target = Vector3Zero(),
-        .color = color,
+        .color = (Color){0, 0, 0, 255},
         .radius = radius,
-        .attenuation = intensity + 0.5f,
+        .attenuation = intensity,
     };
   }
-
-  // Create shader lights (averaged groups) with shader uniform locations
-  for (int g = 0; g < strip->num_shader_lights; g++) {
-    int start = g * leds_per_light;
-    Vector3 center = {0};
-    for (int j = 0; j < leds_per_light; j++) {
-      center = Vector3Add(center, strip->leds[start + j].position);
-    }
-    center = Vector3Scale(center, 1.0f / leds_per_light);
-
-    int shader_index = base_index + g;
-    strip->shader_lights[g] =
-        create_light(shader_index, LIGHT_POINT, center, Vector3Zero(),
-                     strip->leds[start].color, radius, intensity, shader);
-  }
 }
 
-static void led_strip_update(LedStrip *strip, Shader shader, long t) {
-  int lpl = strip->leds_per_light;
+static void update_light_texture(VisualizerState *state) {
+  // Each shader light uses 2 RGBA pixels: (pos.xyz, intensity), (color.rgb,
+  // enabled) We cluster LEDS_PER_SHADER_LIGHT LEDs into one shader light
+  static float lightData[LIGHT_TEX_WIDTH * 4];
+  int numShaderLights = 0;
 
-  for (int g = 0; g < strip->num_shader_lights; g++) {
-    int start = g * lpl;
+  for (int s = 0; s < state->num_strips; s++) {
+    LedStrip *strip = &state->strips[s];
+    int numGroups = strip->num_leds / LEDS_PER_SHADER_LIGHT;
 
-    // Average color across the group
-    int r = 0, gr = 0, b = 0, a = 0;
-    bool any_enabled = false;
-    for (int j = 0; j < lpl; j++) {
-      Light *led = &strip->leds[start + j];
-      r += led->color.r;
-      gr += led->color.g;
-      b += led->color.b;
-      a += led->color.a;
-      if (led->enabled)
-        any_enabled = true;
+    for (int g = 0; g < numGroups; g++) {
+      int start = g * LEDS_PER_SHADER_LIGHT;
+
+      // Average position and color across the group
+      float px = 0, py = 0, pz = 0;
+      float r = 0, gr = 0, b = 0;
+      float intensity = 0;
+      int enabledCount = 0;
+
+      for (int j = 0; j < LEDS_PER_SHADER_LIGHT; j++) {
+        Light *led = &strip->leds[start + j];
+        px += led->position.x;
+        py += led->position.y;
+        pz += led->position.z;
+        r += led->color.r / 255.0f;
+        gr += led->color.g / 255.0f;
+        b += led->color.b / 255.0f;
+        intensity += led->attenuation;
+        if (led->enabled)
+          enabledCount++;
+      }
+
+      float inv = 1.0f / LEDS_PER_SHADER_LIGHT;
+      int baseIdx = numShaderLights * 2 * 4;
+
+      // Pixel 0: averaged position + summed intensity
+      lightData[baseIdx + 0] = px * inv;
+      lightData[baseIdx + 1] = py * inv;
+      lightData[baseIdx + 2] = pz * inv;
+      lightData[baseIdx + 3] = intensity; // sum, not average
+
+      // Pixel 1: averaged color + enabled flag
+      lightData[baseIdx + 4] = r * inv;
+      lightData[baseIdx + 5] = gr * inv;
+      lightData[baseIdx + 6] = b * inv;
+      lightData[baseIdx + 7] = enabledCount > 0 ? 1.0f : 0.0f;
+
+      numShaderLights++;
     }
-    strip->shader_lights[g].color =
-        (Color){r / lpl, gr / lpl, b / lpl, a / lpl};
-    strip->shader_lights[g].enabled = any_enabled;
-
-    update_light_values(shader, strip->shader_lights[g]);
   }
+
+  rlUpdateTexture(state->lightTexture, 0, 0, LIGHT_TEX_WIDTH, 1,
+                  RL_PIXELFORMAT_UNCOMPRESSED_R32G32B32A32, lightData);
+
+  int numLightsLoc = GetShaderLocation(state->deferredShader, "numLights");
+  SetShaderValue(state->deferredShader, numLightsLoc, &numShaderLights,
+                 SHADER_UNIFORM_INT);
 }
 
-static void led_strip_draw(LedStrip *strips, int num_strips, int strip_index,
-                           ColorProgram program, long t) {
-  LedStrip *strip = &strips[strip_index];
-  // Draw housing behind the LEDs
-  float strip_len = (strip->num_leds - 1) * strip->spacing;
-  Vector3 rot = strip->rotation;
-  Matrix rotM = MatrixRotateXYZ(
-      (Vector3){rot.x * DEG2RAD, rot.y * DEG2RAD, rot.z * DEG2RAD});
+static void draw_person(Person *p, long t) {
+  float x = p->pos.x;
+  float z = p->pos.z;
+  float bob = 0.03f * sinf((float)t * 0.08f + p->phase);
+  float y_off = bob;
 
-  // Center of the strip in local space, offset slightly behind (negative Z)
-  Vector3 local_center = {strip_len * 0.5f, 0.0f, -0.005f};
-  Vector3 housing_pos =
-      Vector3Add(strip->position, Vector3Transform(local_center, rotM));
+  // Body
+  DrawCube((Vector3){x, 1.1f + y_off, z}, 0.35f, 0.6f, 0.2f, GRAY);
+  DrawSphere((Vector3){x, 1.55f + y_off, z}, 0.12f, GRAY);
 
-  // Housing size: length of strip x narrow width x thin depth
-  Vector3 local_size = {strip_len + 0.01f, 0.015f, 0.003f};
-  // Rotate the size axes to get world-aligned cube dimensions
-  Vector3 sx = Vector3Transform((Vector3){local_size.x, 0, 0}, rotM);
-  Vector3 sy = Vector3Transform((Vector3){0, local_size.y, 0}, rotM);
-  Vector3 sz = Vector3Transform((Vector3){0, 0, local_size.z}, rotM);
-  float wx = fabsf(sx.x) + fabsf(sy.x) + fabsf(sz.x);
-  float wy = fabsf(sx.y) + fabsf(sy.y) + fabsf(sz.y);
-  float wz = fabsf(sx.z) + fabsf(sy.z) + fabsf(sz.z);
+  // Legs — bob knees slightly opposite to body
+  float knee_bend = -bob * 0.5f;
+  DrawCube((Vector3){x - 0.1f, 0.4f + knee_bend, z}, 0.12f, 0.8f, 0.15f, GRAY);
+  DrawCube((Vector3){x + 0.1f, 0.4f - knee_bend, z}, 0.12f, 0.8f, 0.15f, GRAY);
 
-  DrawCube(housing_pos, wx, wy, wz, GRAY);
+  // Arms — slight offset from body bob
+  float arm_bob = 0.03f * sinf((float)t * 0.08f + p->phase + 0.5f);
+  DrawCube((Vector3){x - 0.27f, 1.05f + arm_bob, z}, 0.1f, 0.65f, 0.1f, GRAY);
+  DrawCube((Vector3){x + 0.27f, 1.05f + arm_bob, z}, 0.1f, 0.65f, 0.1f, GRAY);
+}
 
-  for (int i = 0; i < strip->num_leds; i++) {
-    program(strips, num_strips, strip_index, i, t);
+static void init_gbuffer(GBuffer *gb, int width, int height) {
+  gb->framebuffer = rlLoadFramebuffer();
+  if (gb->framebuffer == 0) {
+    TraceLog(LOG_WARNING, "Failed to create G-buffer framebuffer");
+    return;
+  }
 
-    Light *led = &strip->leds[i];
-    if (led->enabled) {
-      DrawSphereEx(led->position, led->radius, 4, 4,
-                   ColorAlpha(led->color, 0.4f));
-    } else {
-      DrawSphereWires(led->position, led->radius, 4, 4,
-                      ColorAlpha(led->color, 0.1f));
-    }
+  rlEnableFramebuffer(gb->framebuffer);
+
+  // Position texture (RGB16F for precision)
+  gb->positionTexture = rlLoadTexture(NULL, width, height,
+                                      RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16, 1);
+  // Normal texture (RGB16F)
+  gb->normalTexture = rlLoadTexture(NULL, width, height,
+                                    RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16, 1);
+  // Albedo texture (RGBA8)
+  gb->albedoTexture = rlLoadTexture(NULL, width, height,
+                                    RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, 1);
+
+  rlActiveDrawBuffers(3);
+
+  rlFramebufferAttach(gb->framebuffer, gb->positionTexture,
+                      RL_ATTACHMENT_COLOR_CHANNEL0, RL_ATTACHMENT_TEXTURE2D, 0);
+  rlFramebufferAttach(gb->framebuffer, gb->normalTexture,
+                      RL_ATTACHMENT_COLOR_CHANNEL1, RL_ATTACHMENT_TEXTURE2D, 0);
+  rlFramebufferAttach(gb->framebuffer, gb->albedoTexture,
+                      RL_ATTACHMENT_COLOR_CHANNEL2, RL_ATTACHMENT_TEXTURE2D, 0);
+
+  gb->depthRenderbuffer = rlLoadTextureDepth(width, height, true);
+  rlFramebufferAttach(gb->framebuffer, gb->depthRenderbuffer,
+                      RL_ATTACHMENT_DEPTH, RL_ATTACHMENT_RENDERBUFFER, 0);
+
+  if (!rlFramebufferComplete(gb->framebuffer)) {
+    TraceLog(LOG_WARNING, "G-buffer framebuffer is not complete");
   }
 }
 
 void visualizer_init(VisualizerState *state) {
-  if (state->shader.id != 0) {
-    UnloadShader(state->shader);
+  if (state->gbufferShader.id != 0) {
+    UnloadShader(state->gbufferShader);
+    UnloadShader(state->deferredShader);
   }
 
   const char *appDir = GetApplicationDirectory();
   char vsPath[512], fsPath[512];
-  snprintf(vsPath, sizeof(vsPath), "%sresources/shaders/glsl%i/lighting.vs",
+
+  // Load G-buffer shader
+  snprintf(vsPath, sizeof(vsPath), "%sresources/shaders/glsl%i/gbuffer.vs",
            appDir, GLSL_VERSION);
-  snprintf(fsPath, sizeof(fsPath), "%sresources/shaders/glsl%i/lighting.fs",
+  snprintf(fsPath, sizeof(fsPath), "%sresources/shaders/glsl%i/gbuffer.fs",
            appDir, GLSL_VERSION);
+  state->gbufferShader = LoadShader(vsPath, fsPath);
 
-  state->shader = LoadShader(vsPath, fsPath);
-  state->shader.locs[SHADER_LOC_VECTOR_VIEW] =
-      GetShaderLocation(state->shader, "viewPos");
+  // Load deferred lighting shader
+  snprintf(vsPath, sizeof(vsPath), "%sresources/shaders/glsl%i/deferred.vs",
+           appDir, GLSL_VERSION);
+  snprintf(fsPath, sizeof(fsPath), "%sresources/shaders/glsl%i/deferred.fs",
+           appDir, GLSL_VERSION);
+  state->deferredShader = LoadShader(vsPath, fsPath);
+  state->deferredShader.locs[SHADER_LOC_VECTOR_VIEW] =
+      GetShaderLocation(state->deferredShader, "viewPos");
 
-  int ambientLoc = GetShaderLocation(state->shader, "ambient");
-  SetShaderValue(state->shader, ambientLoc, (float[4]){0.1f, 0.1f, 0.1f, 1.0f},
-                 SHADER_UNIFORM_VEC4);
+  // Set up G-buffer texture samplers in deferred shader
+  rlEnableShader(state->deferredShader.id);
+  int texUnit0 = 0, texUnit1 = 1, texUnit2 = 2, texUnit3 = 3;
+  SetShaderValue(state->deferredShader,
+                 GetShaderLocation(state->deferredShader, "gPosition"),
+                 &texUnit0, SHADER_UNIFORM_SAMPLER2D);
+  SetShaderValue(state->deferredShader,
+                 GetShaderLocation(state->deferredShader, "gNormal"), &texUnit1,
+                 SHADER_UNIFORM_SAMPLER2D);
+  SetShaderValue(state->deferredShader,
+                 GetShaderLocation(state->deferredShader, "gAlbedo"), &texUnit2,
+                 SHADER_UNIFORM_SAMPLER2D);
+  SetShaderValue(state->deferredShader,
+                 GetShaderLocation(state->deferredShader, "lightData"),
+                 &texUnit3, SHADER_UNIFORM_SAMPLER2D);
 
-  float led_spacing = 1.0f / 143.0f; // 144 LEDs over 1m
+  int ambientLoc = GetShaderLocation(state->deferredShader, "ambient");
+  SetShaderValue(state->deferredShader, ambientLoc,
+                 (float[4]){0.1f, 0.1f, 0.1f, 1.0f}, SHADER_UNIFORM_VEC4);
+
+  state->lightTexWidth = LIGHT_TEX_WIDTH;
+  int lightTexWidthLoc =
+      GetShaderLocation(state->deferredShader, "lightTexWidth");
+  SetShaderValue(state->deferredShader, lightTexWidthLoc, &state->lightTexWidth,
+                 SHADER_UNIFORM_INT);
+  rlDisableShader();
+
+  // Initialize G-buffer
+  int screenWidth = GetScreenWidth();
+  int screenHeight = GetScreenHeight();
+  init_gbuffer(&state->gbuffer, screenWidth, screenHeight);
+
+  // Create light data texture (1D texture as 1-row 2D texture)
+  state->lightTexture = rlLoadTexture(
+      NULL, LIGHT_TEX_WIDTH, 1, RL_PIXELFORMAT_UNCOMPRESSED_R32G32B32A32, 1);
+  rlTextureParameters(state->lightTexture, RL_TEXTURE_MIN_FILTER,
+                      RL_TEXTURE_FILTER_NEAREST);
+  rlTextureParameters(state->lightTexture, RL_TEXTURE_MAG_FILTER,
+                      RL_TEXTURE_FILTER_NEAREST);
+  rlTextureParameters(state->lightTexture, RL_TEXTURE_WRAP_S,
+                      RL_TEXTURE_WRAP_CLAMP);
+  rlTextureParameters(state->lightTexture, RL_TEXTURE_WRAP_T,
+                      RL_TEXTURE_WRAP_CLAMP);
+
+  float led_spacing = 1.0f / 143.0f;
   float led_radius = 0.004f;
+  float led_intensity = 0.0015f;
 
   state->num_strips = 4;
-  // Two strips against the back wall (Z=-2.95), pointing upward (90° on Z),
-  // equidistant from corners: X = -5/6 and X = 5/6, starting at Y=1.0
-  led_strip_create(&state->strips[0], state->shader, 0, MAX_LEDS_PER_STRIP, 8,
-                   (Vector3){-10.0f / 6.0f, 1.0f, -2.95f},
-                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.30f,
+  led_strip_create(&state->strips[0], MAX_LEDS_PER_STRIP,
+                   (Vector3){-10.0f / 6.0f, 1.0f, -2.5f},
+                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity,
                    led_radius);
-  led_strip_create(&state->strips[1], state->shader, 18, MAX_LEDS_PER_STRIP, 8,
-                   (Vector3){-5.0f / 6.0f, 1.0f, -2.95f},
-                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.30f,
+  led_strip_create(&state->strips[1], MAX_LEDS_PER_STRIP,
+                   (Vector3){-5.0f / 6.0f, 1.0f, -2.5f},
+                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity,
                    led_radius);
-  led_strip_create(&state->strips[2], state->shader, 36, MAX_LEDS_PER_STRIP, 8,
-                   (Vector3){5.0f / 6.0f, 1.0f, -2.95f},
-                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.30f,
+  led_strip_create(&state->strips[2], MAX_LEDS_PER_STRIP,
+                   (Vector3){5.0f / 6.0f, 1.0f, -2.5f},
+                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity,
                    led_radius);
-  led_strip_create(&state->strips[3], state->shader, 54, MAX_LEDS_PER_STRIP, 8,
-                   (Vector3){10.0f / 6.0f, 1.0f, -2.95f},
-                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, 0.30f,
+  led_strip_create(&state->strips[3], MAX_LEDS_PER_STRIP,
+                   (Vector3){10.0f / 6.0f, 1.0f, -2.5f},
+                   (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity,
                    led_radius);
 
   state->active_program = 0;
@@ -271,15 +303,26 @@ void visualizer_init(VisualizerState *state) {
     state->camera.fovy = 45.0f;
     state->camera.projection = CAMERA_PERSPECTIVE;
   }
+
+  srand(42);
+  for (int i = 0; i < NUM_PEOPLE; i++) {
+    state->people[i].pos = (Vector3){
+        -2.0f + 4.0f * ((float)rand() / (float)RAND_MAX),
+        0.0f,
+        -2.5f + 5.0f * ((float)rand() / (float)RAND_MAX),
+    };
+    state->people[i].phase = 6.2832f * ((float)rand() / (float)RAND_MAX);
+  }
 }
 
 void visualizer_update(VisualizerState *state) {
-  UpdateCamera(&state->camera, CAMERA_FREE);
+  UpdateCamera(&state->camera, CAMERA_FIRST_PERSON);
 
   float cameraPos[3] = {state->camera.position.x, state->camera.position.y,
                         state->camera.position.z};
-  SetShaderValue(state->shader, state->shader.locs[SHADER_LOC_VECTOR_VIEW],
-                 cameraPos, SHADER_UNIFORM_VEC3);
+  SetShaderValue(state->deferredShader,
+                 state->deferredShader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos,
+                 SHADER_UNIFORM_VEC3);
 
   if (IsKeyPressed(KEY_P)) {
     state->active_program = (state->active_program + 1) % NUM_PROGRAMS;
@@ -294,64 +337,136 @@ void visualizer_update(VisualizerState *state) {
     }
   }
 
+  // Update LED colors via color program (done in draw for visual LEDs,
+  // but we need to update for the SSBO here)
   for (int s = 0; s < state->num_strips; s++) {
-    led_strip_update(&state->strips[s], state->shader, state->t);
+    for (int i = 0; i < state->strips[s].num_leds; i++) {
+      state->color_program(state->strips, state->num_strips, s, i, state->t);
+    }
   }
+
+  update_light_texture(state);
 
   state->t += 1;
 }
 
-void visualizer_draw(VisualizerState *state) {
-  BeginDrawing();
-
-  ClearBackground(RAYWHITE);
-
-  BeginMode3D(state->camera);
-  BeginShaderMode(state->shader);
-
+static void draw_scene_geometry(VisualizerState *state) {
   // Room: 5m (X) x 3m (Y) x 6m (Z), centered at origin
-  // Floor
   DrawPlane((Vector3){0.0f, 0.0f, 0.0f}, (Vector2){5.0f, 6.0f}, GRAY);
-  // Ceiling
   DrawCube((Vector3){0.0f, 3.0f, 0.0f}, 5.0f, 0.01f, 6.0f, DARKGRAY);
-  // Back wall (Z = -3)
   DrawCube((Vector3){0.0f, 1.5f, -3.0f}, 5.0f, 3.0f, 0.01f, DARKGRAY);
-  // Left wall (X = -2.5)
   DrawCube((Vector3){-2.5f, 1.5f, 0.0f}, 0.01f, 3.0f, 6.0f, DARKGRAY);
-  // Right wall (X = 2.5)
   DrawCube((Vector3){2.5f, 1.5f, 0.0f}, 0.01f, 3.0f, 6.0f, DARKGRAY);
-  // Front wall (Z = 3) — behind the camera
   DrawCube((Vector3){0.0f, 1.5f, 3.0f}, 5.0f, 3.0f, 0.01f, DARKGRAY);
 
-  // Person (~1.8m tall)
-  // Torso
-  DrawCube((Vector3){0.0f, 1.1f, 0.0f}, 0.35f, 0.6f, 0.2f, GRAY);
-  // Head
-  DrawSphere((Vector3){0.0f, 1.55f, 0.0f}, 0.12f, GRAY);
-  // Left leg
-  DrawCube((Vector3){-0.1f, 0.4f, 0.0f}, 0.12f, 0.8f, 0.15f, GRAY);
-  // Right leg
-  DrawCube((Vector3){0.1f, 0.4f, 0.0f}, 0.12f, 0.8f, 0.15f, GRAY);
-  // Left arm
-  DrawCube((Vector3){-0.27f, 1.05f, 0.0f}, 0.1f, 0.65f, 0.1f, GRAY);
-  // Right arm
-  DrawCube((Vector3){0.27f, 1.05f, 0.0f}, 0.1f, 0.65f, 0.1f, GRAY);
-
-  EndShaderMode();
-
-  for (int s = 0; s < state->num_strips; s++) {
-    led_strip_draw(state->strips, state->num_strips, s, state->color_program,
-                   state->t);
+  for (int p = 0; p < NUM_PEOPLE; p++) {
+    draw_person(&state->people[p], state->t);
   }
 
+  // LED strip housings
+  for (int s = 0; s < state->num_strips; s++) {
+    LedStrip *strip = &state->strips[s];
+    float strip_len = (strip->num_leds - 1) * strip->spacing;
+    Vector3 rot = strip->rotation;
+    Matrix rotM = MatrixRotateXYZ(
+        (Vector3){rot.x * DEG2RAD, rot.y * DEG2RAD, rot.z * DEG2RAD});
+    Vector3 local_center = {strip_len * 0.5f, 0.0f, -0.005f};
+    Vector3 housing_pos =
+        Vector3Add(strip->position, Vector3Transform(local_center, rotM));
+    Vector3 local_size = {strip_len + 0.01f, 0.015f, 0.003f};
+    Vector3 sx = Vector3Transform((Vector3){local_size.x, 0, 0}, rotM);
+    Vector3 sy = Vector3Transform((Vector3){0, local_size.y, 0}, rotM);
+    Vector3 sz = Vector3Transform((Vector3){0, 0, local_size.z}, rotM);
+    float wx = fabsf(sx.x) + fabsf(sy.x) + fabsf(sz.x);
+    float wy = fabsf(sx.y) + fabsf(sy.y) + fabsf(sz.y);
+    float wz = fabsf(sx.z) + fabsf(sy.z) + fabsf(sz.z);
+    DrawCube(housing_pos, wx * 2, wy, wz, GRAY);
+  }
+}
+
+void visualizer_draw(VisualizerState *state) {
+  int screenWidth = GetScreenWidth();
+  int screenHeight = GetScreenHeight();
+
+  BeginDrawing();
+
+  // === PASS 1: Render geometry to G-buffer ===
+  rlEnableFramebuffer(state->gbuffer.framebuffer);
+  rlClearColor(0, 0, 0, 0);
+  rlClearScreenBuffers();
+  rlDisableColorBlend();
+
+  BeginMode3D(state->camera);
+  BeginShaderMode(state->gbufferShader);
+
+  draw_scene_geometry(state);
+
+  EndShaderMode();
   EndMode3D();
 
-  DrawFPS(10, 10);
+  rlEnableColorBlend();
 
+  // === PASS 2: Deferred lighting to screen ===
+  rlDisableFramebuffer();
+  rlClearScreenBuffers();
+
+  rlDisableColorBlend();
+  rlEnableShader(state->deferredShader.id);
+
+  // Bind G-buffer textures
+  rlActiveTextureSlot(0);
+  rlEnableTexture(state->gbuffer.positionTexture);
+  rlActiveTextureSlot(1);
+  rlEnableTexture(state->gbuffer.normalTexture);
+  rlActiveTextureSlot(2);
+  rlEnableTexture(state->gbuffer.albedoTexture);
+
+  // Bind light data texture
+  rlActiveTextureSlot(3);
+  rlEnableTexture(state->lightTexture);
+
+  // Draw fullscreen quad
+  rlLoadDrawQuad();
+
+  rlDisableShader();
+  rlEnableColorBlend();
+
+  // Copy depth buffer for correct occlusion of forward-rendered elements
+  rlBindFramebuffer(RL_READ_FRAMEBUFFER, state->gbuffer.framebuffer);
+  rlBindFramebuffer(RL_DRAW_FRAMEBUFFER, 0);
+  rlBlitFramebuffer(0, 0, screenWidth, screenHeight, 0, 0, screenWidth,
+                    screenHeight, 0x00000100); // GL_DEPTH_BUFFER_BIT
+  rlDisableFramebuffer();
+
+  // === Forward pass: Draw LED spheres (emissive, not lit) ===
+  BeginMode3D(state->camera);
+  rlEnableShader(rlGetShaderIdDefault());
+
+  for (int s = 0; s < state->num_strips; s++) {
+    LedStrip *strip = &state->strips[s];
+    for (int i = 0; i < strip->num_leds; i++) {
+      Light *led = &strip->leds[i];
+      if (led->enabled) {
+        // Draw LED spheres at full brightness
+        DrawSphereEx(led->position, led->radius, 4, 4, led->color);
+      } else {
+        DrawSphereWires(led->position, led->radius, 4, 4,
+                        ColorAlpha(led->color, 0.1f));
+      }
+    }
+  }
+
+  rlDisableShader();
+  EndMode3D();
+
+  // === HUD ===
+  DrawFPS(10, 10);
   DrawText(TextFormat("Program: %s (P to cycle)",
                       program_names[state->active_program]),
            10, 40, 20, DARKGRAY);
   DrawText("T to toggle lights", 10, 65, 20, DARKGRAY);
+  DrawText(TextFormat("Lights: %d", state->num_strips * MAX_LEDS_PER_STRIP), 10,
+           90, 20, DARKGRAY);
 
   EndDrawing();
 }

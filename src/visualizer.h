@@ -4,52 +4,60 @@
 #include <stdbool.h>
 
 #define MAX_STRIPS 4
+#define NUM_PEOPLE 10
 #define MAX_LEDS_PER_STRIP 144
-#define SHADER_MAX_LIGHTS 144 // GPU uniform limit (~4096 components)
+#define LEDS_PER_SHADER_LIGHT 8
+#define MAX_SHADER_LIGHTS_PER_STRIP (MAX_LEDS_PER_STRIP / LEDS_PER_SHADER_LIGHT)
+#define MAX_TOTAL_SHADER_LIGHTS (MAX_STRIPS * MAX_SHADER_LIGHTS_PER_STRIP)
 
-typedef enum { LIGHT_DIRECTIONAL = 0, LIGHT_POINT } LightType;
+// G-Buffer for deferred rendering
+typedef struct {
+    unsigned int framebuffer;
+    unsigned int positionTexture;
+    unsigned int normalTexture;
+    unsigned int albedoTexture;
+    unsigned int depthRenderbuffer;
+} GBuffer;
 
 typedef struct {
-  int type;
   bool enabled;
   Vector3 position;
-  Vector3 target;
   Color color;
   float attenuation;
-  int enabledLoc;
-  int typeLoc;
-  int positionLoc;
-  int targetLoc;
-  int colorLoc;
-  int attenuationLoc;
   float radius;
 } Light;
 
 typedef struct {
   int num_leds;
-  int base_index;        // offset into shader lights[] array
-  int leds_per_light;    // how many LEDs averaged into one shader light
-  int num_shader_lights; // num_leds / leds_per_light
   Vector3 position;
   Vector3 rotation;
   float spacing;
   float intensity;
   float radius;
-  Light leds[MAX_LEDS_PER_STRIP];          // visual LEDs (full resolution)
-  Light shader_lights[MAX_LEDS_PER_STRIP]; // averaged lights sent to GPU
+  Light leds[MAX_LEDS_PER_STRIP];
 } LedStrip;
 
 typedef void (*ColorProgram)(LedStrip *strips, int num_strips, int strip_index,
                              int led_index, long t);
 
+typedef struct {
+  Vector3 pos;
+  float phase; // bob phase offset
+} Person;
+
 typedef struct VisualizerState {
   Camera camera;
-  Shader shader;
+  Shader gbufferShader;
+  Shader deferredShader;
+  GBuffer gbuffer;
+  unsigned int lightTexture;
+  int lightTexWidth;
   int num_strips;
   LedStrip strips[MAX_STRIPS];
   long t;
   int active_program;
   ColorProgram color_program;
+  Person people[NUM_PEOPLE];
 } VisualizerState;
 
 // Initialize state (load shader, create lights, set up camera)
