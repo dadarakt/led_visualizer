@@ -235,17 +235,17 @@ void visualizer_init(VisualizerState *state) {
   // 4 strips evenly spaced across the 5m back wall (X: -2.5 to 2.5)
   state->num_strips = 4;
   led_strip_create(
-      &state->strips[0], MAX_LEDS_PER_STRIP, (Vector3){-1.875f, 1.0f, -2.95f},
+      &state->strips[0], MAX_LEDS_PER_STRIP, (Vector3){-0.75f, 1.0f, -2.95f},
       (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity, led_radius);
   led_strip_create(
-      &state->strips[1], MAX_LEDS_PER_STRIP, (Vector3){-0.625f, 1.0f, -2.95f},
+      &state->strips[1], MAX_LEDS_PER_STRIP, (Vector3){-0.25f, 1.0f, -2.95f},
       (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity, led_radius);
-  led_strip_create(
-      &state->strips[2], MAX_LEDS_PER_STRIP, (Vector3){0.625f, 1.0f, -2.95f},
-      (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity, led_radius);
-  led_strip_create(
-      &state->strips[3], MAX_LEDS_PER_STRIP, (Vector3){1.875f, 1.0f, -2.95f},
-      (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity, led_radius);
+  led_strip_create(&state->strips[2], MAX_LEDS_PER_STRIP,
+                   (Vector3){0.25f, 1.0f, -2.95f}, (Vector3){0.0f, 0.0f, 90.0f},
+                   led_spacing, led_intensity, led_radius);
+  led_strip_create(&state->strips[3], MAX_LEDS_PER_STRIP,
+                   (Vector3){0.75f, 1.0f, -2.95f}, (Vector3){0.0f, 0.0f, 90.0f},
+                   led_spacing, led_intensity, led_radius);
 
   state->active_program = 0;
   state->current_program = &programs[0];
@@ -254,7 +254,7 @@ void visualizer_init(VisualizerState *state) {
 
   state->camera_mode = CAMERA_CUSTOM;
   if (state->camera.fovy == 0) {
-    state->camera.position = (Vector3){0.0f, 1.5f, -1.0f};
+    state->camera.position = (Vector3){0.0f, 1.5f, -2.0f};
     state->camera.target = (Vector3){0.0f, 1.5f, -2.5f};
     state->camera.up = (Vector3){0.0f, 1.0f, 0.0f};
     state->camera.fovy = 70.0f;
