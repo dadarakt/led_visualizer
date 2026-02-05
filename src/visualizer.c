@@ -13,7 +13,8 @@
 // We cluster LEDs into groups to reduce shader light count
 #define LIGHT_TEX_WIDTH (MAX_TOTAL_SHADER_LIGHTS * 2)
 
-// Global pointer to strips for pixel function (set before calling program update)
+// Global pointer to strips for pixel function (set before calling program
+// update)
 static LedStrip *g_strips = NULL;
 
 // Pixel access function for simulator - reads/writes to LedStrip color data
@@ -317,7 +318,8 @@ void visualizer_update(VisualizerState *state) {
 
   // Exponential moving average smoothing (alpha ~0.2 for strong smoothing)
   const double alpha = 0.2;
-  state->smoothed_delta = alpha * raw_delta + (1.0 - alpha) * state->smoothed_delta;
+  state->smoothed_delta =
+      alpha * raw_delta + (1.0 - alpha) * state->smoothed_delta;
 
   // Accumulate smoothed time
   state->time_ms += state->smoothed_delta * 1000.0;
@@ -513,9 +515,11 @@ void visualizer_draw(VisualizerState *state) {
 
   // === HUD ===
   DrawFPS(10, 10);
-  const char *prog_name = state->current_program ? state->current_program->name : "(none)";
+  const char *prog_name =
+      state->current_program ? state->current_program->name : "(none)";
   DrawText(TextFormat("Program: %s (P)", prog_name), 10, 40, 20, DARKGRAY);
-  DrawText(TextFormat("Palette: %s (O)", palette_registry[state->active_palette].name),
+  DrawText(TextFormat("Palette: %s (O)",
+                      palette_registry[state->active_palette].name),
            10, 65, 20, DARKGRAY);
   DrawText(state->simple_render_mode ? "U: full render" : "U: simple render",
            10, 90, 20, DARKGRAY);
