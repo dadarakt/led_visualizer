@@ -12,11 +12,11 @@
 
 // G-Buffer for deferred rendering
 typedef struct {
-    unsigned int framebuffer;
-    unsigned int positionTexture;
-    unsigned int normalTexture;
-    unsigned int albedoTexture;
-    unsigned int depthRenderbuffer;
+  unsigned int framebuffer;
+  unsigned int positionTexture;
+  unsigned int normalTexture;
+  unsigned int albedoTexture;
+  unsigned int depthRenderbuffer;
 } GBuffer;
 
 typedef struct {
@@ -47,6 +47,7 @@ typedef struct {
 
 typedef struct VisualizerState {
   Camera camera;
+  CameraMode camera_mode;
   Shader gbufferShader;
   Shader deferredShader;
   GBuffer gbuffer;
