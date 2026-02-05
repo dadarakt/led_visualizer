@@ -70,16 +70,12 @@ int led_viz_init(const LedVizConfig *config) {
     led_strip_config_t strip_config = {
         .strip_gpio_num = config->strips[i].gpio,
         .max_leds = config->strips[i].num_leds,
+        .led_pixel_format = LED_PIXEL_FORMAT_GRB,
         .led_model = LED_MODEL_WS2812,
-        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
-        .flags.invert_out = false,
     };
 
     led_strip_rmt_config_t rmt_config = {
-        .clk_src = RMT_CLK_SRC_DEFAULT,
         .resolution_hz = 10 * 1000 * 1000, // 10MHz
-        .mem_block_symbols = 64,
-        .flags.with_dma = false,
     };
 
     esp_err_t err =

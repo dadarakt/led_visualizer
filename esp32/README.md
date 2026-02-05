@@ -13,9 +13,13 @@ Thin runtime layer to run your LED programs on ESP32 hardware using ESP-IDF's `l
 platform = espressif32
 board = esp32dev
 framework = espidf
+```
 
-lib_deps =
-    espressif/led_strip@^2.0.0
+**src/idf_component.yml** (for led_strip dependency):
+
+```yaml
+dependencies:
+  espressif/led_strip: "^2.0.0"
 ```
 
 **Project structure:**
@@ -31,6 +35,7 @@ your_project/
 │       ├── led_viz_esp32.h
 │       └── led_viz_esp32.c
 ├── src/
+│   ├── idf_component.yml  # Dependency declaration
 │   └── main.c
 └── shared/
     └── programs.c         # Your effects (shared with visualizer)
@@ -69,8 +74,8 @@ Or add via: `idf.py add-dependency "espressif/led_strip^2.0.0"`
 ```c
 #include "led_viz_esp32.h"
 
-// Include your programs
-#include "programs.c"
+// Include your programs (adjust path as needed)
+#include "../shared/programs.c"
 
 void app_main(void) {
     LedVizConfig config = {
