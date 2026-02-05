@@ -270,6 +270,8 @@ void visualizer_init(VisualizerState *state) {
   state->current_program = &programs[0];
   state->start_time = GetTime();
   state->time_ms = 0;
+  state->last_frame_time = state->start_time;
+  state->smoothed_delta = 1.0 / 60.0; // assume 60fps initially
 
   state->camera_mode = CAMERA_CUSTOM;
   if (state->camera.fovy == 0) {
@@ -298,8 +300,23 @@ void visualizer_init(VisualizerState *state) {
 }
 
 void visualizer_update(VisualizerState *state) {
-  // Update time
-  state->time_ms = (GetTime() - state->start_time) * 1000.0;
+  // Smoothed delta time accumulation to avoid frame jitter
+  double current_time = GetTime();
+  double raw_delta = current_time - state->last_frame_time;
+  state->last_frame_time = current_time;
+
+  // Clamp raw delta to avoid large jumps (e.g., after window drag)
+  if (raw_delta > 0.1)
+    raw_delta = 0.1;
+  if (raw_delta < 0.0)
+    raw_delta = 0.0;
+
+  // Exponential moving average smoothing (alpha ~0.2 for strong smoothing)
+  const double alpha = 0.2;
+  state->smoothed_delta = alpha * raw_delta + (1.0 - alpha) * state->smoothed_delta;
+
+  // Accumulate smoothed time
+  state->time_ms += state->smoothed_delta * 1000.0;
 
   float cameraPos[3] = {state->camera.position.x, state->camera.position.y,
                         state->camera.position.z};

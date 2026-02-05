@@ -57,6 +57,8 @@ typedef struct VisualizerState {
   LedStrip strips[MAX_STRIPS];
   double start_time;
   double time_ms;
+  double last_frame_time;
+  double smoothed_delta;
   int active_program;
   const Program *current_program;
   Person people[NUM_PEOPLE];
