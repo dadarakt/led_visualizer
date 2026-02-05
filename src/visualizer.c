@@ -13,6 +13,25 @@
 // We cluster LEDs into groups to reduce shader light count
 #define LIGHT_TEX_WIDTH (MAX_TOTAL_SHADER_LIGHTS * 2)
 
+// Global pointer to strips for pixel function (set before calling program update)
+static LedStrip *g_strips = NULL;
+
+// Pixel access function for simulator - reads/writes to LedStrip color data
+static void simulator_pixel(int strip, int led, uint8_t *r, uint8_t *g,
+                            uint8_t *b) {
+  Light *light = &g_strips[strip].leds[led];
+  if (r && g && b) {
+    // Set pixel
+    light->color.r = *r;
+    light->color.g = *g;
+    light->color.b = *b;
+  }
+  // Always return current values
+  *r = light->color.r;
+  *g = light->color.g;
+  *b = light->color.b;
+}
+
 static void led_strip_create(LedStrip *strip, int num_leds, Vector3 position,
                              Vector3 rotation, float spacing, float intensity,
                              float radius) {
@@ -322,8 +341,9 @@ void visualizer_update(VisualizerState *state) {
   }
 
   // Update LED colors via current program
-  state->current_program->update(state->strips, state->num_strips,
-                                 state->time_ms);
+  g_strips = state->strips;
+  state->current_program->update(state->num_strips, MAX_LEDS_PER_STRIP,
+                                 state->time_ms, simulator_pixel);
 
   update_light_texture(state);
 }
