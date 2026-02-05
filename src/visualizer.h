@@ -62,6 +62,7 @@ typedef struct VisualizerState {
   int active_program;
   const Program *current_program;
   Person people[NUM_PEOPLE];
+  bool simple_render_mode;
 } VisualizerState;
 
 // Initialize state (load shader, create lights, set up camera)

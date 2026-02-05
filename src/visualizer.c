@@ -273,6 +273,8 @@ void visualizer_init(VisualizerState *state) {
   state->last_frame_time = state->start_time;
   state->smoothed_delta = 1.0 / 60.0; // assume 60fps initially
 
+  state->simple_render_mode = false;
+
   state->camera_mode = CAMERA_CUSTOM;
   if (state->camera.fovy == 0) {
     state->camera.position = (Vector3){0.0f, 1.5f, -2.0f};
@@ -353,6 +355,10 @@ void visualizer_update(VisualizerState *state) {
     }
   }
 
+  if (IsKeyPressed(KEY_U)) {
+    state->simple_render_mode = !state->simple_render_mode;
+  }
+
   if (state->camera_mode == CAMERA_FIRST_PERSON) {
     UpdateCamera(&state->camera, CAMERA_FIRST_PERSON);
   }
@@ -405,80 +411,102 @@ void visualizer_draw(VisualizerState *state) {
 
   BeginDrawing();
 
-  // === PASS 1: Render geometry to G-buffer ===
-  rlEnableFramebuffer(state->gbuffer.framebuffer);
-  rlClearColor(0, 0, 0, 0);
-  rlClearScreenBuffers();
-  rlDisableColorBlend();
+  if (state->simple_render_mode) {
+    // === Simple mode: just draw LED pixels on black background ===
+    ClearBackground(BLACK);
 
-  BeginMode3D(state->camera);
-  BeginShaderMode(state->gbufferShader);
+    BeginMode3D(state->camera);
 
-  draw_scene_geometry(state);
-
-  EndShaderMode();
-  EndMode3D();
-
-  rlEnableColorBlend();
-
-  // === PASS 2: Deferred lighting to screen ===
-  rlDisableFramebuffer();
-  rlClearScreenBuffers();
-
-  rlDisableColorBlend();
-  rlEnableShader(state->deferredShader.id);
-
-  // Bind G-buffer textures
-  rlActiveTextureSlot(0);
-  rlEnableTexture(state->gbuffer.positionTexture);
-  rlActiveTextureSlot(1);
-  rlEnableTexture(state->gbuffer.normalTexture);
-  rlActiveTextureSlot(2);
-  rlEnableTexture(state->gbuffer.albedoTexture);
-
-  // Bind light data texture
-  rlActiveTextureSlot(3);
-  rlEnableTexture(state->lightTexture);
-
-  // Draw fullscreen quad
-  rlLoadDrawQuad();
-
-  rlDisableShader();
-  rlEnableColorBlend();
-
-  // Copy depth buffer for correct occlusion of forward-rendered elements
-  rlBindFramebuffer(RL_READ_FRAMEBUFFER, state->gbuffer.framebuffer);
-  rlBindFramebuffer(RL_DRAW_FRAMEBUFFER, 0);
-  rlBlitFramebuffer(0, 0, screenWidth, screenHeight, 0, 0, screenWidth,
-                    screenHeight, 0x00000100); // GL_DEPTH_BUFFER_BIT
-  rlDisableFramebuffer();
-
-  // === Forward pass: Draw LED spheres (emissive, not lit) ===
-  BeginMode3D(state->camera);
-  rlEnableShader(rlGetShaderIdDefault());
-
-  for (int s = 0; s < state->num_strips; s++) {
-    LedStrip *strip = &state->strips[s];
-    for (int i = 0; i < strip->num_leds; i++) {
-      Light *led = &strip->leds[i];
-      if (led->enabled) {
-        // Draw LED spheres at full brightness
-        DrawSphereEx(led->position, led->radius, 4, 4, led->color);
-      } else {
-        DrawSphereWires(led->position, led->radius, 4, 4,
-                        ColorAlpha(led->color, 0.1f));
+    for (int s = 0; s < state->num_strips; s++) {
+      LedStrip *strip = &state->strips[s];
+      for (int i = 0; i < strip->num_leds; i++) {
+        Light *led = &strip->leds[i];
+        if (led->enabled) {
+          DrawSphereEx(led->position, led->radius * 2.0f, 6, 6, led->color);
+        }
       }
     }
-  }
 
-  rlDisableShader();
-  EndMode3D();
+    EndMode3D();
+  } else {
+    // === Full deferred rendering ===
+
+    // === PASS 1: Render geometry to G-buffer ===
+    rlEnableFramebuffer(state->gbuffer.framebuffer);
+    rlClearColor(0, 0, 0, 0);
+    rlClearScreenBuffers();
+    rlDisableColorBlend();
+
+    BeginMode3D(state->camera);
+    BeginShaderMode(state->gbufferShader);
+
+    draw_scene_geometry(state);
+
+    EndShaderMode();
+    EndMode3D();
+
+    rlEnableColorBlend();
+
+    // === PASS 2: Deferred lighting to screen ===
+    rlDisableFramebuffer();
+    rlClearScreenBuffers();
+
+    rlDisableColorBlend();
+    rlEnableShader(state->deferredShader.id);
+
+    // Bind G-buffer textures
+    rlActiveTextureSlot(0);
+    rlEnableTexture(state->gbuffer.positionTexture);
+    rlActiveTextureSlot(1);
+    rlEnableTexture(state->gbuffer.normalTexture);
+    rlActiveTextureSlot(2);
+    rlEnableTexture(state->gbuffer.albedoTexture);
+
+    // Bind light data texture
+    rlActiveTextureSlot(3);
+    rlEnableTexture(state->lightTexture);
+
+    // Draw fullscreen quad
+    rlLoadDrawQuad();
+
+    rlDisableShader();
+    rlEnableColorBlend();
+
+    // Copy depth buffer for correct occlusion of forward-rendered elements
+    rlBindFramebuffer(RL_READ_FRAMEBUFFER, state->gbuffer.framebuffer);
+    rlBindFramebuffer(RL_DRAW_FRAMEBUFFER, 0);
+    rlBlitFramebuffer(0, 0, screenWidth, screenHeight, 0, 0, screenWidth,
+                      screenHeight, 0x00000100); // GL_DEPTH_BUFFER_BIT
+    rlDisableFramebuffer();
+
+    // === Forward pass: Draw LED spheres (emissive, not lit) ===
+    BeginMode3D(state->camera);
+    rlEnableShader(rlGetShaderIdDefault());
+
+    for (int s = 0; s < state->num_strips; s++) {
+      LedStrip *strip = &state->strips[s];
+      for (int i = 0; i < strip->num_leds; i++) {
+        Light *led = &strip->leds[i];
+        if (led->enabled) {
+          // Draw LED spheres at full brightness
+          DrawSphereEx(led->position, led->radius, 4, 4, led->color);
+        } else {
+          DrawSphereWires(led->position, led->radius, 4, 4,
+                          ColorAlpha(led->color, 0.1f));
+        }
+      }
+    }
+
+    rlDisableShader();
+    EndMode3D();
+  }
 
   // === HUD ===
   DrawFPS(10, 10);
   DrawText(TextFormat("Program: %s (P to cycle)", state->current_program->name),
            10, 40, 20, DARKGRAY);
-  DrawText("T to toggle lights", 10, 65, 20, DARKGRAY);
+  DrawText(state->simple_render_mode ? "U: full render" : "U: simple render",
+           10, 65, 20, DARKGRAY);
   DrawText(TextFormat("Lights: %d", state->num_strips * MAX_LEDS_PER_STRIP), 10,
            90, 20, DARKGRAY);
 
