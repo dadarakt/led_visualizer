@@ -66,7 +66,7 @@ typedef struct VisualizerState {
   int active_program;
   const Program *current_program;
   int active_palette;
-  const CRGBPalette16 *current_palette;
+  const Palette16 *current_palette;
   Person people[NUM_PEOPLE];
   bool simple_render_mode;
 } VisualizerState;

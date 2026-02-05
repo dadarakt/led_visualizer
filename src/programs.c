@@ -3,7 +3,7 @@
 #include <stddef.h>
 
 static void heartbeat_update(int num_strips, int num_leds, double time_ms,
-                             PixelFunc pixel, const CRGBPalette16 palette) {
+                             PixelFunc pixel, const Palette16 palette) {
   double t = time_ms / 1000.0;
 
   double beat_period = 60.0 / 72.0; // ~72 bpm
@@ -14,11 +14,10 @@ static void heartbeat_update(int num_strips, int num_leds, double time_ms,
 
   for (int s = 0; s < num_strips; s++) {
     for (int i = 0; i < num_leds; i++) {
-      // Use led index for position in palette (0-255)
       uint8_t index = (uint8_t)((float)i / (float)num_leds * 255.0f +
                                 t * 50.0f); // scroll over time
       uint8_t brightness = (uint8_t)(255.0f * heartbeat);
-      CRGB color = ColorFromPalette(palette, index, brightness, LINEARBLEND);
+      RGB color = palette_sample(palette, index, brightness, true);
 
       pixel(s, i, &color.r, &color.g, &color.b);
     }
@@ -26,22 +25,21 @@ static void heartbeat_update(int num_strips, int num_leds, double time_ms,
 }
 
 static void rainbow_update(int num_strips, int num_leds, double time_ms,
-                           PixelFunc pixel, const CRGBPalette16 palette) {
+                           PixelFunc pixel, const Palette16 palette) {
   float t = (float)(time_ms / 1000.0);
 
   for (int s = 0; s < num_strips; s++) {
     for (int i = 0; i < num_leds; i++) {
-      // Scroll through palette over time
       uint8_t index =
           (uint8_t)((float)i / (float)num_leds * 255.0f + t * 60.0f);
-      CRGB color = ColorFromPalette(palette, index, 255, LINEARBLEND);
+      RGB color = palette_sample(palette, index, 255, true);
       pixel(s, i, &color.r, &color.g, &color.b);
     }
   }
 }
 
 static void solid_white_update(int num_strips, int num_leds, double time_ms,
-                               PixelFunc pixel, const CRGBPalette16 palette) {
+                               PixelFunc pixel, const Palette16 palette) {
   (void)time_ms;
   (void)palette;
 
@@ -54,7 +52,7 @@ static void solid_white_update(int num_strips, int num_leds, double time_ms,
 }
 
 static void comet_update(int num_strips, int num_leds, double time_ms,
-                         PixelFunc pixel, const CRGBPalette16 palette) {
+                         PixelFunc pixel, const Palette16 palette) {
   float t = (float)(time_ms / 1000.0);
   float tail_length = 25.0f;
 
@@ -83,8 +81,8 @@ static void comet_update(int num_strips, int num_leds, double time_ms,
 
       // Use palette - head gets bright end (index 255), tail fades toward 0
       uint8_t index = (uint8_t)(255.0f - dist / tail_length * 128.0f);
-      CRGB color = ColorFromPalette(palette, index, (uint8_t)(brightness * 255),
-                                    LINEARBLEND);
+      RGB color =
+          palette_sample(palette, index, (uint8_t)(brightness * 255), true);
       pixel(s, i, &color.r, &color.g, &color.b);
     }
   }

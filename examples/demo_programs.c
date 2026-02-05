@@ -5,15 +5,14 @@
 
 // Simple rainbow scroll
 static void rainbow_update(int num_strips, int num_leds, double time_ms,
-                           PixelFunc pixel, const CRGBPalette16 palette) {
-  float t = (float)(time_ms / 1000.0);
+                           PixelFunc pixel, const Palette16 palette) {
+  (void)num_leds; // unused warning
   long shift_value = time_ms / 20;
 
   for (int s = 0; s < num_strips; s++) {
     for (int i = 0; i < num_leds; i++) {
       uint8_t index = (shift_value + i) % 255;
-      //(uint8_t)((float)i / (float)num_leds * 255.0f + t * 60.0f);
-      CRGB color = ColorFromPalette(palette, index, 255, LINEARBLEND);
+      RGB color = palette_sample(palette, index, 255, true);
       pixel(s, i, &color.r, &color.g, &color.b);
     }
   }
@@ -21,7 +20,7 @@ static void rainbow_update(int num_strips, int num_leds, double time_ms,
 
 // Breathing effect
 static void breathe_update(int num_strips, int num_leds, double time_ms,
-                           PixelFunc pixel, const CRGBPalette16 palette) {
+                           PixelFunc pixel, const Palette16 palette) {
   float t = (float)(time_ms / 1000.0);
   float breath = (sinf(t * 2.0f) + 1.0f) * 0.5f; // 0.0 - 1.0
   uint8_t brightness = (uint8_t)(breath * 255.0f);
@@ -29,7 +28,7 @@ static void breathe_update(int num_strips, int num_leds, double time_ms,
   for (int s = 0; s < num_strips; s++) {
     for (int i = 0; i < num_leds; i++) {
       uint8_t index = (uint8_t)((float)i / (float)num_leds * 255.0f);
-      CRGB color = ColorFromPalette(palette, index, brightness, LINEARBLEND);
+      RGB color = palette_sample(palette, index, brightness, true);
       pixel(s, i, &color.r, &color.g, &color.b);
     }
   }
@@ -37,7 +36,7 @@ static void breathe_update(int num_strips, int num_leds, double time_ms,
 
 // Sparkle effect
 static void sparkle_update(int num_strips, int num_leds, double time_ms,
-                           PixelFunc pixel, const CRGBPalette16 palette) {
+                           PixelFunc pixel, const Palette16 palette) {
   (void)palette;
 
   // Simple pseudo-random based on time
