@@ -6,8 +6,22 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-// Include your programs (same file used in visualizer!)
-// This file must define strip_setup[], NUM_STRIPS, programs[], NUM_PROGRAMS
+// Include your programs file (same file used in desktop visualizer!)
+// This file must define:
+//   - strip_setup[]  : Array of StripDef with num_leds and position per strip
+//   - NUM_STRIPS     : Number of strips
+//   - programs[]     : Array of Program definitions
+//   - NUM_PROGRAMS   : Number of programs
+//
+// Example programs.c strip setup (strips can have different LED counts and lengths):
+//
+//   const StripDef strip_setup[] = {
+//       {.num_leds = 60,  .position = -0.5f, .length_cm = 100.0f},  // 1m @ 60/m
+//       {.num_leds = 144, .position = 0.0f,  .length_cm = 100.0f},  // 1m @ 144/m
+//       {.num_leds = 300, .position = 0.5f,  .length_cm = 500.0f},  // 5m @ 60/m
+//   };
+//   const int NUM_STRIPS = 3;
+//
 #include "programs.c"
 
 static const char *TAG = "main";

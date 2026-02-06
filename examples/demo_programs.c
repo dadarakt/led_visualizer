@@ -3,12 +3,12 @@
 
 #include <led_viz.h>
 
-// Strip setup - 4 strips evenly spaced
+// Strip setup - 4 strips with different lengths and LED counts
 const StripDef strip_setup[] = {
-    {.num_leds = 144, .position = -0.5f},
-    {.num_leds = 144, .position = -0.17f},
-    {.num_leds = 144, .position = 0.17f},
-    {.num_leds = 144, .position = 0.5f},
+    {.num_leds = 60, .position = -0.5f, .length_cm = 100.0f},   // 1m @ 60/m
+    {.num_leds = 144, .position = -0.17f, .length_cm = 100.0f}, // 1m @ 144/m
+    {.num_leds = 144, .position = 0.17f, .length_cm = 100.0f},  // 1m @ 144/m
+    {.num_leds = 300, .position = 0.5f, .length_cm = 500.0f},   // 5m @ 60/m
 };
 const int NUM_STRIPS = sizeof(strip_setup) / sizeof(strip_setup[0]);
 

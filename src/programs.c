@@ -4,10 +4,10 @@
 
 // Strip setup - 4 strips evenly spaced
 const StripDef strip_setup[] = {
-    {.num_leds = 144, .position = -0.5f},
-    {.num_leds = 144, .position = -0.17f},
-    {.num_leds = 144, .position = 0.17f},
-    {.num_leds = 144, .position = 0.5f},
+    {.num_leds = 144, .position = -0.5f, .length_cm = 100.0f},
+    {.num_leds = 144, .position = -0.17f, .length_cm = 100.0f},
+    {.num_leds = 144, .position = 0.17f, .length_cm = 100.0f},
+    {.num_leds = 144, .position = 0.5f, .length_cm = 100.0f},
 };
 const int NUM_STRIPS = sizeof(strip_setup) / sizeof(strip_setup[0]);
 

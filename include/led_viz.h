@@ -46,13 +46,15 @@ extern const Palette16 PALETTE_PARTY;
 // Strip definition - defines a single LED strip
 typedef struct {
   int num_leds;
-  float position;  // 1D position (-1.0 to 1.0), 0.0 = center
+  float position;   // 1D position (-1.0 to 1.0), 0.0 = center
+  float length_cm;  // Physical length in centimeters
 } StripDef;
 
 // Runtime accessors (call from update functions)
 int get_num_strips(void);
 int get_strip_num_leds(int strip);
 float get_strip_position(int strip);
+float get_strip_length_cm(int strip);
 
 // Internal: called by runtime to set strip setup (do not call from programs)
 void _led_viz_set_strip_setup(const StripDef *setup, int num_strips);
@@ -77,8 +79,8 @@ typedef struct Program {
 // Your programs.c must define:
 //
 //   const StripDef strip_setup[] = {
-//       {.num_leds = 144, .position = -0.5f},
-//       {.num_leds = 144, .position = 0.5f},
+//       {.num_leds = 144, .position = -0.5f, .length_cm = 100.0f},
+//       {.num_leds = 60,  .position = 0.5f,  .length_cm = 500.0f},
 //   };
 //   const int NUM_STRIPS = sizeof(strip_setup) / sizeof(strip_setup[0]);
 //

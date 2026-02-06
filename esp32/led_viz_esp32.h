@@ -6,9 +6,13 @@
 #include "led_viz.h"
 #include <stdbool.h>
 
+// Hardware limits
+#define LED_VIZ_MAX_STRIPS 8
+#define LED_VIZ_MAX_LEDS_PER_STRIP 300
+
 // Runtime configuration (GPIO pins only - strip config comes from program file)
 typedef struct {
-  int gpio_pins[4];  // GPIO for strip 0, 1, 2, 3
+  int gpio_pins[LED_VIZ_MAX_STRIPS];
   int target_fps;
 } LedVizConfig;
 

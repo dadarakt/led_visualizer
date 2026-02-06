@@ -16,9 +16,9 @@ extern const int NUM_STRIPS;
 
 // Runtime state
 static struct {
-  led_strip_handle_t strips[4];
+  led_strip_handle_t strips[LED_VIZ_MAX_STRIPS];
   int num_strips;
-  int num_leds[4];
+  int num_leds[LED_VIZ_MAX_STRIPS];
   int target_fps;
 
   const Program *current_program;
@@ -29,7 +29,7 @@ static struct {
 } state;
 
 // Pixel buffer (written by programs, sent to strips)
-static uint8_t pixel_buffer[4][144][3]; // [strip][led][rgb]
+static uint8_t pixel_buffer[LED_VIZ_MAX_STRIPS][LED_VIZ_MAX_LEDS_PER_STRIP][3];
 
 // PixelFunc implementation - writes to buffer
 static void esp32_pixel(int strip, int led, uint8_t *r, uint8_t *g,
@@ -66,8 +66,8 @@ int led_viz_init(const LedVizConfig *config) {
 
   // Read strip config from program file
   state.num_strips = NUM_STRIPS;
-  if (state.num_strips > 4)
-    state.num_strips = 4;
+  if (state.num_strips > LED_VIZ_MAX_STRIPS)
+    state.num_strips = LED_VIZ_MAX_STRIPS;
 
   state.target_fps = config->target_fps > 0 ? config->target_fps : 60;
 
@@ -77,8 +77,8 @@ int led_viz_init(const LedVizConfig *config) {
   // Initialize each strip using ESP-IDF's led_strip component
   for (int i = 0; i < state.num_strips; i++) {
     state.num_leds[i] = strip_setup[i].num_leds;
-    if (state.num_leds[i] > 144)
-      state.num_leds[i] = 144;
+    if (state.num_leds[i] > LED_VIZ_MAX_LEDS_PER_STRIP)
+      state.num_leds[i] = LED_VIZ_MAX_LEDS_PER_STRIP;
 
     led_strip_config_t strip_config = {
         .strip_gpio_num = config->gpio_pins[i],

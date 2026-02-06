@@ -36,6 +36,12 @@ float get_strip_position(int strip) {
   return g_strip_setup[strip].position;
 }
 
+float get_strip_length_cm(int strip) {
+  if (strip < 0 || strip >= g_num_strips || !g_strip_setup)
+    return 0.0f;
+  return g_strip_setup[strip].length_cm;
+}
+
 // Pixel access function for simulator - reads/writes to LedStrip color data
 static void simulator_pixel(int strip, int led, uint8_t *r, uint8_t *g,
                             uint8_t *b) {
@@ -325,7 +331,11 @@ void visualizer_configure_strips(VisualizerState *state,
     if (num_leds > MAX_LEDS_PER_STRIP)
       num_leds = MAX_LEDS_PER_STRIP;
 
-    float led_spacing = num_leds > 1 ? 1.0f / (float)(num_leds - 1) : 0.0f;
+    // Convert length from cm to meters (default 100cm if not set)
+    float length_m = strip_setup[i].length_cm > 0
+                         ? strip_setup[i].length_cm / 100.0f
+                         : 1.0f;
+    float led_spacing = num_leds > 1 ? length_m / (float)(num_leds - 1) : 0.0f;
 
     // Map position (-1.0 to 1.0) to x coordinate (-0.75 to +0.75)
     float x = strip_setup[i].position * 0.75f;

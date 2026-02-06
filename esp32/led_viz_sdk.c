@@ -26,6 +26,12 @@ float get_strip_position(int strip) {
   return g_strip_setup[strip].position;
 }
 
+float get_strip_length_cm(int strip) {
+  if (strip < 0 || strip >= g_num_strips || !g_strip_setup)
+    return 0.0f;
+  return g_strip_setup[strip].length_cm;
+}
+
 RGB palette_sample(const Palette16 palette, uint8_t index, uint8_t brightness,
                    bool interpolate) {
   uint8_t entry = index >> 4;
