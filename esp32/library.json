@@ -1,0 +1,15 @@
+{
+  "name": "led_viz",
+  "version": "1.0.0",
+  "description": "LED Visualizer SDK for ESP32",
+  "frameworks": "espidf",
+  "platforms": "espressif32",
+  "build": {
+    "srcFilter": [
+      "+<led_viz_sdk.c>",
+      "+<led_viz_esp32.c>"
+    ],
+    "includeDir": ".",
+    "srcDir": "."
+  }
+}
