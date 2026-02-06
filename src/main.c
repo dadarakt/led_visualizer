@@ -161,36 +161,56 @@ static void unload_programs(LoadedPrograms *loaded) {
 
 static void print_usage(const char *prog) {
   fprintf(stderr, "LED Visualizer - Hot-reloading LED program simulator\n\n");
-  fprintf(stderr, "Usage: %s <programs.c>\n\n", prog);
-  fprintf(stderr, "Arguments:\n");
-  fprintf(stderr, "  programs.c    Path to your LED programs source file\n\n");
+  fprintf(stderr, "Usage: %s [options] <programs.c>\n\n", prog);
+  fprintf(stderr, "Options:\n");
+  fprintf(stderr, "  --strips N    Number of LED strips (1-4, default: 4)\n");
+  fprintf(stderr, "  --leds N      LEDs per strip (1-144, default: 144)\n\n");
   fprintf(stderr, "Example:\n");
-  fprintf(stderr, "  %s ./my_project/src/programs.c\n\n", prog);
+  fprintf(stderr, "  %s --strips 2 --leds 60 ./programs.c\n\n", prog);
   fprintf(stderr, "The source file should include <led_viz.h> and define:\n");
   fprintf(stderr, "  const Program programs[] = { ... };\n");
   fprintf(stderr, "  const int NUM_PROGRAMS = ...;\n");
 }
 
 int main(int argc, char *argv[]) {
+  int num_strips = 4;
+  int num_leds = 144;
+  const char *source_arg = NULL;
+
   // Parse arguments
-  if (argc < 2) {
-    print_usage(argv[0]);
-    return 1;
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+      print_usage(argv[0]);
+      return 0;
+    } else if (strcmp(argv[i], "--strips") == 0 && i + 1 < argc) {
+      num_strips = atoi(argv[++i]);
+      if (num_strips < 1)
+        num_strips = 1;
+      if (num_strips > 4)
+        num_strips = 4;
+    } else if (strcmp(argv[i], "--leds") == 0 && i + 1 < argc) {
+      num_leds = atoi(argv[++i]);
+      if (num_leds < 1)
+        num_leds = 1;
+      if (num_leds > 144)
+        num_leds = 144;
+    } else if (argv[i][0] != '-') {
+      source_arg = argv[i];
+    }
   }
 
-  // Handle help flag
-  if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
+  if (!source_arg) {
     print_usage(argv[0]);
-    return 0;
+    return 1;
   }
 
   // Resolve paths
   resolve_exe_dir();
 
   // Get absolute path to source file
-  char *resolved = realpath(argv[1], NULL);
+  char *resolved = realpath(source_arg, NULL);
   if (!resolved) {
-    fprintf(stderr, "Error: Cannot find source file: %s\n", argv[1]);
+    fprintf(stderr, "Error: Cannot find source file: %s\n", source_arg);
     return 1;
   }
   strncpy(source_file_path, resolved, sizeof(source_file_path) - 1);
@@ -216,7 +236,7 @@ int main(int argc, char *argv[]) {
 
   // Load visualizer state
   VisualizerState state = {0};
-  visualizer_init(&state);
+  visualizer_init(&state, num_strips, num_leds);
 
   // Load user programs
   LoadedPrograms loaded = load_programs();

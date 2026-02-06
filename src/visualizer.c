@@ -179,7 +179,7 @@ static void init_gbuffer(GBuffer *gb, int width, int height) {
   }
 }
 
-void visualizer_init(VisualizerState *state) {
+void visualizer_init(VisualizerState *state, int num_strips, int leds_per_strip) {
   if (state->gbufferShader.id != 0) {
     UnloadShader(state->gbufferShader);
     UnloadShader(state->deferredShader);
@@ -248,24 +248,22 @@ void visualizer_init(VisualizerState *state) {
   rlTextureParameters(state->lightTexture, RL_TEXTURE_WRAP_T,
                       RL_TEXTURE_WRAP_CLAMP);
 
-  float led_spacing = 1.0f / 143.0f;
+  float led_spacing = 1.0f / (float)(leds_per_strip - 1);
   float led_radius = 0.004f;
   float led_intensity = 0.0015f;
 
-  // 4 strips evenly spaced across the 5m back wall (X: -2.5 to 2.5)
-  state->num_strips = 4;
-  led_strip_create(
-      &state->strips[0], MAX_LEDS_PER_STRIP, (Vector3){-0.75f, 1.0f, -2.95f},
-      (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity, led_radius);
-  led_strip_create(
-      &state->strips[1], MAX_LEDS_PER_STRIP, (Vector3){-0.25f, 1.0f, -2.95f},
-      (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity, led_radius);
-  led_strip_create(&state->strips[2], MAX_LEDS_PER_STRIP,
-                   (Vector3){0.25f, 1.0f, -2.95f}, (Vector3){0.0f, 0.0f, 90.0f},
-                   led_spacing, led_intensity, led_radius);
-  led_strip_create(&state->strips[3], MAX_LEDS_PER_STRIP,
-                   (Vector3){0.75f, 1.0f, -2.95f}, (Vector3){0.0f, 0.0f, 90.0f},
-                   led_spacing, led_intensity, led_radius);
+  // Position strips evenly across the back wall
+  state->num_strips = num_strips;
+  float total_width = 1.5f; // Total spread of strips
+  float strip_spacing = num_strips > 1 ? total_width / (num_strips - 1) : 0.0f;
+  float start_x = num_strips > 1 ? -total_width / 2.0f : 0.0f;
+
+  for (int i = 0; i < num_strips; i++) {
+    float x = start_x + i * strip_spacing;
+    led_strip_create(&state->strips[i], leds_per_strip,
+                     (Vector3){x, 1.0f, -2.95f}, (Vector3){0.0f, 0.0f, 90.0f},
+                     led_spacing, led_intensity, led_radius);
+  }
 
   state->active_program = 0;
   state->current_program = NULL; // Set by main after loading
@@ -375,7 +373,8 @@ void visualizer_update(VisualizerState *state) {
   // Update LED colors via current program
   g_strips = state->strips;
   if (state->current_program && state->current_program->update) {
-    state->current_program->update(state->num_strips, MAX_LEDS_PER_STRIP,
+    int leds_per_strip = state->strips[0].num_leds;
+    state->current_program->update(state->num_strips, leds_per_strip,
                                    state->time_ms, simulator_pixel,
                                    *state->current_palette);
   }

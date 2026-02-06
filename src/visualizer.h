@@ -72,7 +72,7 @@ typedef struct VisualizerState {
 } VisualizerState;
 
 // Initialize state (load shader, create lights, set up camera)
-void visualizer_init(VisualizerState *state);
+void visualizer_init(VisualizerState *state, int num_strips, int leds_per_strip);
 
 // Update camera, input, light values
 void visualizer_update(VisualizerState *state);
