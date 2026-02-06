@@ -6,16 +6,9 @@
 #include "led_viz.h"
 #include <stdbool.h>
 
-// Configuration for a single LED strip
+// Runtime configuration (GPIO pins only - strip config comes from program file)
 typedef struct {
-  int gpio;
-  int num_leds;
-} StripConfig;
-
-// Runtime configuration
-typedef struct {
-  StripConfig strips[4];
-  int num_strips;
+  int gpio_pins[4];  // GPIO for strip 0, 1, 2, 3
   int target_fps;
 } LedVizConfig;
 

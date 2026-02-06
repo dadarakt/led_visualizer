@@ -1,6 +1,6 @@
+#include "programs.h"
 #include "raylib.h"
 #include "visualizer.h"
-#include "programs.h"
 
 #include <dlfcn.h>
 #include <fcntl.h>
@@ -31,6 +31,8 @@ typedef struct {
   void *handle;
   const Program *programs;
   const int *num_programs;
+  const StripDef *strip_setup;
+  const int *num_strips;
 } LoadedPrograms;
 
 static void resolve_exe_dir(void) {
@@ -68,8 +70,8 @@ static void resolve_exe_dir(void) {
            exe_dir);
 
   // Compiled library goes in temp
-  snprintf(compiled_lib_path, sizeof(compiled_lib_path),
-           "/tmp/led_viz_user%s", LIB_EXT);
+  snprintf(compiled_lib_path, sizeof(compiled_lib_path), "/tmp/led_viz_user%s",
+           LIB_EXT);
 }
 
 static time_t get_mtime(const char *path) {
@@ -135,18 +137,36 @@ static LoadedPrograms load_programs(void) {
 
   loaded.programs = dlsym(loaded.handle, "programs");
   loaded.num_programs = dlsym(loaded.handle, "NUM_PROGRAMS");
+  loaded.strip_setup = dlsym(loaded.handle, "strip_setup");
+  loaded.num_strips = dlsym(loaded.handle, "NUM_STRIPS");
 
   if (!loaded.programs || !loaded.num_programs) {
-    TraceLog(LOG_ERROR,
-             "Missing symbols. Make sure your file defines:\n"
-             "  const Program programs[] = { ... };\n"
-             "  const int NUM_PROGRAMS = ...;");
+    TraceLog(LOG_ERROR, "Missing symbols. Make sure your file defines:\n"
+                        "  const Program programs[] = { ... };\n"
+                        "  const int NUM_PROGRAMS = ...;");
     dlclose(loaded.handle);
     loaded.handle = NULL;
     return loaded;
   }
 
-  TraceLog(LOG_INFO, "Loaded %d program(s)", *loaded.num_programs);
+  if (!loaded.strip_setup || !loaded.num_strips) {
+    TraceLog(LOG_ERROR, "Missing strip setup. Make sure your file defines:\n"
+                        "  const StripDef strip_setup[] = { ... };\n"
+                        "  const int NUM_STRIPS = ...;");
+    dlclose(loaded.handle);
+    loaded.handle = NULL;
+    return loaded;
+  }
+
+  // Set strip setup for accessor functions in loaded library
+  void (*set_strip_setup)(const StripDef *, int) =
+      dlsym(loaded.handle, "_led_viz_set_strip_setup");
+  if (set_strip_setup) {
+    set_strip_setup(loaded.strip_setup, *loaded.num_strips);
+  }
+
+  TraceLog(LOG_INFO, "Loaded %d program(s) with %d strip(s)",
+           *loaded.num_programs, *loaded.num_strips);
   return loaded;
 }
 
@@ -156,25 +176,24 @@ static void unload_programs(LoadedPrograms *loaded) {
     loaded->handle = NULL;
     loaded->programs = NULL;
     loaded->num_programs = NULL;
+    loaded->strip_setup = NULL;
+    loaded->num_strips = NULL;
   }
 }
 
 static void print_usage(const char *prog) {
   fprintf(stderr, "LED Visualizer - Hot-reloading LED program simulator\n\n");
-  fprintf(stderr, "Usage: %s [options] <programs.c>\n\n", prog);
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "  --strips N    Number of LED strips (1-4, default: 4)\n");
-  fprintf(stderr, "  --leds N      LEDs per strip (1-144, default: 144)\n\n");
+  fprintf(stderr, "Usage: %s <programs.c>\n\n", prog);
   fprintf(stderr, "Example:\n");
-  fprintf(stderr, "  %s --strips 2 --leds 60 ./programs.c\n\n", prog);
+  fprintf(stderr, "  %s ./programs.c\n\n", prog);
   fprintf(stderr, "The source file should include <led_viz.h> and define:\n");
+  fprintf(stderr, "  const StripDef strip_setup[] = { ... };\n");
+  fprintf(stderr, "  const int NUM_STRIPS = ...;\n");
   fprintf(stderr, "  const Program programs[] = { ... };\n");
   fprintf(stderr, "  const int NUM_PROGRAMS = ...;\n");
 }
 
 int main(int argc, char *argv[]) {
-  int num_strips = 4;
-  int num_leds = 144;
   const char *source_arg = NULL;
 
   // Parse arguments
@@ -182,18 +201,6 @@ int main(int argc, char *argv[]) {
     if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
       print_usage(argv[0]);
       return 0;
-    } else if (strcmp(argv[i], "--strips") == 0 && i + 1 < argc) {
-      num_strips = atoi(argv[++i]);
-      if (num_strips < 1)
-        num_strips = 1;
-      if (num_strips > 4)
-        num_strips = 4;
-    } else if (strcmp(argv[i], "--leds") == 0 && i + 1 < argc) {
-      num_leds = atoi(argv[++i]);
-      if (num_leds < 1)
-        num_leds = 1;
-      if (num_leds > 144)
-        num_leds = 144;
     } else if (argv[i][0] != '-') {
       source_arg = argv[i];
     }
@@ -236,11 +243,16 @@ int main(int argc, char *argv[]) {
 
   // Load visualizer state
   VisualizerState state = {0};
-  visualizer_init(&state, num_strips, num_leds);
+  visualizer_init(&state);
 
-  // Load user programs
+  // Load user programs and configure strips
   LoadedPrograms loaded = load_programs();
   time_t last_mtime = get_mtime(source_file_path);
+
+  // Configure strips from loaded strip_setup
+  if (loaded.strip_setup && loaded.num_strips) {
+    visualizer_configure_strips(&state, loaded.strip_setup, *loaded.num_strips);
+  }
 
   while (!WindowShouldClose()) {
     // Check for source file changes
@@ -254,6 +266,12 @@ int main(int argc, char *argv[]) {
       if (compile_source(source_file_path)) {
         unload_programs(&loaded);
         loaded = load_programs();
+
+        // Reconfigure strips from new strip_setup
+        if (loaded.strip_setup && loaded.num_strips) {
+          visualizer_configure_strips(&state, loaded.strip_setup,
+                                      *loaded.num_strips);
+        }
 
         // Reset to first program if current is out of range
         if (loaded.num_programs &&

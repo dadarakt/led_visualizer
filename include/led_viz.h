@@ -40,6 +40,24 @@ extern const Palette16 PALETTE_CLOUD;
 extern const Palette16 PALETTE_PARTY;
 
 // ============================================================================
+// Strip Configuration
+// ============================================================================
+
+// Strip definition - defines a single LED strip
+typedef struct {
+  int num_leds;
+  float position;  // 1D position (-1.0 to 1.0), 0.0 = center
+} StripDef;
+
+// Runtime accessors (call from update functions)
+int get_num_strips(void);
+int get_strip_num_leds(int strip);
+float get_strip_position(int strip);
+
+// Internal: called by runtime to set strip setup (do not call from programs)
+void _led_viz_set_strip_setup(const StripDef *setup, int num_strips);
+
+// ============================================================================
 // Program Interface
 // ============================================================================
 
@@ -50,14 +68,19 @@ typedef void (*PixelFunc)(int strip, int led, uint8_t *r, uint8_t *g,
 // Program definition
 typedef struct Program {
   const char *name;
-  void (*update)(int num_strips, int num_leds, double time_ms, PixelFunc pixel,
-                 const Palette16 palette);
+  void (*update)(double time_ms, PixelFunc pixel, const Palette16 palette);
   void (*init)(void);    // optional: called when program becomes active
   void (*cleanup)(void); // optional: called when switching away
 } Program;
 
 // ============================================================================
 // Your programs.c must define:
+//
+//   const StripDef strip_setup[] = {
+//       {.num_leds = 144, .position = -0.5f},
+//       {.num_leds = 144, .position = 0.5f},
+//   };
+//   const int NUM_STRIPS = sizeof(strip_setup) / sizeof(strip_setup[0]);
 //
 //   const Program programs[] = {
 //       {"My Program", my_update_func, NULL, NULL},

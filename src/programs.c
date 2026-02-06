@@ -2,8 +2,17 @@
 #include <math.h>
 #include <stddef.h>
 
-static void heartbeat_update(int num_strips, int num_leds, double time_ms,
-                             PixelFunc pixel, const Palette16 palette) {
+// Strip setup - 4 strips evenly spaced
+const StripDef strip_setup[] = {
+    {.num_leds = 144, .position = -0.5f},
+    {.num_leds = 144, .position = -0.17f},
+    {.num_leds = 144, .position = 0.17f},
+    {.num_leds = 144, .position = 0.5f},
+};
+const int NUM_STRIPS = sizeof(strip_setup) / sizeof(strip_setup[0]);
+
+static void heartbeat_update(double time_ms, PixelFunc pixel,
+                             const Palette16 palette) {
   double t = time_ms / 1000.0;
 
   double beat_period = 60.0 / 72.0; // ~72 bpm
@@ -12,7 +21,9 @@ static void heartbeat_update(int num_strips, int num_leds, double time_ms,
   double dub = exp(-pow((beat_phase - 0.35) * 12.0, 2.0));
   float heartbeat = 0.6f + 0.4f * fmax(lub, dub);
 
+  int num_strips = get_num_strips();
   for (int s = 0; s < num_strips; s++) {
+    int num_leds = get_strip_num_leds(s);
     for (int i = 0; i < num_leds; i++) {
       uint8_t index = (uint8_t)((float)i / (float)num_leds * 255.0f +
                                 t * 50.0f); // scroll over time
@@ -24,11 +35,13 @@ static void heartbeat_update(int num_strips, int num_leds, double time_ms,
   }
 }
 
-static void rainbow_update(int num_strips, int num_leds, double time_ms,
-                           PixelFunc pixel, const Palette16 palette) {
+static void rainbow_update(double time_ms, PixelFunc pixel,
+                           const Palette16 palette) {
   float t = (float)(time_ms / 1000.0);
 
+  int num_strips = get_num_strips();
   for (int s = 0; s < num_strips; s++) {
+    int num_leds = get_strip_num_leds(s);
     for (int i = 0; i < num_leds; i++) {
       uint8_t index =
           (uint8_t)((float)i / (float)num_leds * 255.0f + t * 60.0f);
@@ -38,12 +51,14 @@ static void rainbow_update(int num_strips, int num_leds, double time_ms,
   }
 }
 
-static void solid_white_update(int num_strips, int num_leds, double time_ms,
-                               PixelFunc pixel, const Palette16 palette) {
+static void solid_white_update(double time_ms, PixelFunc pixel,
+                               const Palette16 palette) {
   (void)time_ms;
   (void)palette;
 
+  int num_strips = get_num_strips();
   for (int s = 0; s < num_strips; s++) {
+    int num_leds = get_strip_num_leds(s);
     for (int i = 0; i < num_leds; i++) {
       uint8_t r = 255, g = 255, b = 255;
       pixel(s, i, &r, &g, &b);
@@ -51,12 +66,15 @@ static void solid_white_update(int num_strips, int num_leds, double time_ms,
   }
 }
 
-static void comet_update(int num_strips, int num_leds, double time_ms,
-                         PixelFunc pixel, const Palette16 palette) {
+static void comet_update(double time_ms, PixelFunc pixel,
+                         const Palette16 palette) {
   float t = (float)(time_ms / 1000.0);
   float tail_length = 25.0f;
 
+  int num_strips = get_num_strips();
   for (int s = 0; s < num_strips; s++) {
+    int num_leds = get_strip_num_leds(s);
+
     // Pseudo-random per-strip values based on strip index
     unsigned int seed = (unsigned int)(s * 2654435761u);
     float speed = 0.3f + (float)(seed % 100) / 200.0f;   // 0.3 - 0.8

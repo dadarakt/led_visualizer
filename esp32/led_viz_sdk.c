@@ -3,6 +3,29 @@
 
 #include "led_viz.h"
 
+// Strip setup (set by runtime before calling program)
+static const StripDef *g_strip_setup = NULL;
+static int g_num_strips = 0;
+
+void _led_viz_set_strip_setup(const StripDef *setup, int num_strips) {
+  g_strip_setup = setup;
+  g_num_strips = num_strips;
+}
+
+int get_num_strips(void) { return g_num_strips; }
+
+int get_strip_num_leds(int strip) {
+  if (strip < 0 || strip >= g_num_strips || !g_strip_setup)
+    return 0;
+  return g_strip_setup[strip].num_leds;
+}
+
+float get_strip_position(int strip) {
+  if (strip < 0 || strip >= g_num_strips || !g_strip_setup)
+    return 0.0f;
+  return g_strip_setup[strip].position;
+}
+
 RGB palette_sample(const Palette16 palette, uint8_t index, uint8_t brightness,
                    bool interpolate) {
   uint8_t entry = index >> 4;

@@ -17,6 +17,25 @@
 // update)
 static LedStrip *g_strips = NULL;
 
+// Strip setup (for built-in programs using accessor functions)
+static const StripDef *g_strip_setup = NULL;
+static int g_num_strips = 0;
+
+// Runtime accessors (implementation for built-in programs)
+int get_num_strips(void) { return g_num_strips; }
+
+int get_strip_num_leds(int strip) {
+  if (strip < 0 || strip >= g_num_strips || !g_strip_setup)
+    return 0;
+  return g_strip_setup[strip].num_leds;
+}
+
+float get_strip_position(int strip) {
+  if (strip < 0 || strip >= g_num_strips || !g_strip_setup)
+    return 0.0f;
+  return g_strip_setup[strip].position;
+}
+
 // Pixel access function for simulator - reads/writes to LedStrip color data
 static void simulator_pixel(int strip, int led, uint8_t *r, uint8_t *g,
                             uint8_t *b) {
@@ -179,7 +198,7 @@ static void init_gbuffer(GBuffer *gb, int width, int height) {
   }
 }
 
-void visualizer_init(VisualizerState *state, int num_strips, int leds_per_strip) {
+void visualizer_init(VisualizerState *state) {
   if (state->gbufferShader.id != 0) {
     UnloadShader(state->gbufferShader);
     UnloadShader(state->deferredShader);
@@ -248,23 +267,7 @@ void visualizer_init(VisualizerState *state, int num_strips, int leds_per_strip)
   rlTextureParameters(state->lightTexture, RL_TEXTURE_WRAP_T,
                       RL_TEXTURE_WRAP_CLAMP);
 
-  float led_spacing = 1.0f / (float)(leds_per_strip - 1);
-  float led_radius = 0.004f;
-  float led_intensity = 0.0015f;
-
-  // Position strips evenly across the back wall
-  state->num_strips = num_strips;
-  float total_width = 1.5f; // Total spread of strips
-  float strip_spacing = num_strips > 1 ? total_width / (num_strips - 1) : 0.0f;
-  float start_x = num_strips > 1 ? -total_width / 2.0f : 0.0f;
-
-  for (int i = 0; i < num_strips; i++) {
-    float x = start_x + i * strip_spacing;
-    led_strip_create(&state->strips[i], leds_per_strip,
-                     (Vector3){x, 1.0f, -2.95f}, (Vector3){0.0f, 0.0f, 90.0f},
-                     led_spacing, led_intensity, led_radius);
-  }
-
+  state->num_strips = 0;
   state->active_program = 0;
   state->current_program = NULL; // Set by main after loading
   state->active_palette = 0;
@@ -300,6 +303,39 @@ void visualizer_init(VisualizerState *state, int num_strips, int leds_per_strip)
     };
     state->people[i].phase = 6.2832f * ((float)rand() / (float)RAND_MAX);
   }
+}
+
+void visualizer_configure_strips(VisualizerState *state,
+                                 const StripDef *strip_setup, int num_strips) {
+  // Store for accessor functions
+  g_strip_setup = strip_setup;
+  g_num_strips = num_strips;
+
+  // Clamp to max strips
+  if (num_strips > MAX_STRIPS)
+    num_strips = MAX_STRIPS;
+  state->num_strips = num_strips;
+
+  float led_radius = 0.004f;
+  float led_intensity = 0.0015f;
+
+  // Create strips from StripDef array
+  for (int i = 0; i < num_strips; i++) {
+    int num_leds = strip_setup[i].num_leds;
+    if (num_leds > MAX_LEDS_PER_STRIP)
+      num_leds = MAX_LEDS_PER_STRIP;
+
+    float led_spacing = num_leds > 1 ? 1.0f / (float)(num_leds - 1) : 0.0f;
+
+    // Map position (-1.0 to 1.0) to x coordinate (-0.75 to +0.75)
+    float x = strip_setup[i].position * 0.75f;
+
+    led_strip_create(&state->strips[i], num_leds, (Vector3){x, 1.0f, -2.95f},
+                     (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity,
+                     led_radius);
+  }
+
+  TraceLog(LOG_INFO, "Configured %d strips", num_strips);
 }
 
 void visualizer_update(VisualizerState *state) {
@@ -373,9 +409,7 @@ void visualizer_update(VisualizerState *state) {
   // Update LED colors via current program
   g_strips = state->strips;
   if (state->current_program && state->current_program->update) {
-    int leds_per_strip = state->strips[0].num_leds;
-    state->current_program->update(state->num_strips, leds_per_strip,
-                                   state->time_ms, simulator_pixel,
+    state->current_program->update(state->time_ms, simulator_pixel,
                                    *state->current_palette);
   }
 

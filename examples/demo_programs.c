@@ -3,13 +3,23 @@
 
 #include <led_viz.h>
 
+// Strip setup - 4 strips evenly spaced
+const StripDef strip_setup[] = {
+    {.num_leds = 144, .position = -0.5f},
+    {.num_leds = 144, .position = -0.17f},
+    {.num_leds = 144, .position = 0.17f},
+    {.num_leds = 144, .position = 0.5f},
+};
+const int NUM_STRIPS = sizeof(strip_setup) / sizeof(strip_setup[0]);
+
 // Simple rainbow scroll
-static void rainbow_update(int num_strips, int num_leds, double time_ms,
-                           PixelFunc pixel, const Palette16 palette) {
-  (void)num_leds; // unused warning
+static void rainbow_update(double time_ms, PixelFunc pixel,
+                           const Palette16 palette) {
   long shift_value = time_ms / 20;
 
+  int num_strips = get_num_strips();
   for (int s = 0; s < num_strips; s++) {
+    int num_leds = get_strip_num_leds(s);
     for (int i = 0; i < num_leds; i++) {
       uint8_t index = (shift_value + i) % 255;
       RGB color = palette_sample(palette, index, 255, true);
@@ -19,13 +29,15 @@ static void rainbow_update(int num_strips, int num_leds, double time_ms,
 }
 
 // Breathing effect
-static void breathe_update(int num_strips, int num_leds, double time_ms,
-                           PixelFunc pixel, const Palette16 palette) {
+static void breathe_update(double time_ms, PixelFunc pixel,
+                           const Palette16 palette) {
   float t = (float)(time_ms / 1000.0);
   float breath = (sinf(t * 2.0f) + 1.0f) * 0.5f; // 0.0 - 1.0
   uint8_t brightness = (uint8_t)(breath * 255.0f);
 
+  int num_strips = get_num_strips();
   for (int s = 0; s < num_strips; s++) {
+    int num_leds = get_strip_num_leds(s);
     for (int i = 0; i < num_leds; i++) {
       uint8_t index = (uint8_t)((float)i / (float)num_leds * 255.0f);
       RGB color = palette_sample(palette, index, brightness, true);
@@ -35,14 +47,16 @@ static void breathe_update(int num_strips, int num_leds, double time_ms,
 }
 
 // Sparkle effect
-static void sparkle_update(int num_strips, int num_leds, double time_ms,
-                           PixelFunc pixel, const Palette16 palette) {
+static void sparkle_update(double time_ms, PixelFunc pixel,
+                           const Palette16 palette) {
   (void)palette;
 
   // Simple pseudo-random based on time
   unsigned int seed = (unsigned int)(time_ms * 10.0);
 
+  int num_strips = get_num_strips();
   for (int s = 0; s < num_strips; s++) {
+    int num_leds = get_strip_num_leds(s);
     for (int i = 0; i < num_leds; i++) {
       // Darken all pixels first
       uint8_t r = 0, g = 0, b = 0;
@@ -54,6 +68,7 @@ static void sparkle_update(int num_strips, int num_leds, double time_ms,
   for (int k = 0; k < 20; k++) {
     seed = seed * 1103515245 + 12345;
     int s = (seed >> 16) % num_strips;
+    int num_leds = get_strip_num_leds(s);
     seed = seed * 1103515245 + 12345;
     int i = (seed >> 16) % num_leds;
     uint8_t r = 255, g = 255, b = 255;

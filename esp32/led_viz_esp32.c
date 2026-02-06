@@ -10,6 +10,10 @@
 
 static const char *TAG = "led_viz";
 
+// Strip setup from program file
+extern const StripDef strip_setup[];
+extern const int NUM_STRIPS;
+
 // Runtime state
 static struct {
   led_strip_handle_t strips[4];
@@ -60,16 +64,25 @@ int led_viz_init(const LedVizConfig *config) {
   memset(&state, 0, sizeof(state));
   memset(pixel_buffer, 0, sizeof(pixel_buffer));
 
-  state.num_strips = config->num_strips;
+  // Read strip config from program file
+  state.num_strips = NUM_STRIPS;
+  if (state.num_strips > 4)
+    state.num_strips = 4;
+
   state.target_fps = config->target_fps > 0 ? config->target_fps : 60;
 
+  // Set strip setup for accessor functions
+  _led_viz_set_strip_setup(strip_setup, state.num_strips);
+
   // Initialize each strip using ESP-IDF's led_strip component
-  for (int i = 0; i < config->num_strips; i++) {
-    state.num_leds[i] = config->strips[i].num_leds;
+  for (int i = 0; i < state.num_strips; i++) {
+    state.num_leds[i] = strip_setup[i].num_leds;
+    if (state.num_leds[i] > 144)
+      state.num_leds[i] = 144;
 
     led_strip_config_t strip_config = {
-        .strip_gpio_num = config->strips[i].gpio,
-        .max_leds = config->strips[i].num_leds,
+        .strip_gpio_num = config->gpio_pins[i],
+        .max_leds = state.num_leds[i],
         .led_pixel_format = LED_PIXEL_FORMAT_GRB,
         .led_model = LED_MODEL_WS2812,
     };
@@ -142,16 +155,8 @@ void led_viz_run(void) {
     // Calculate time since start
     double time_ms = (frame_start - state.start_time_us) / 1000.0;
 
-    // Get max LEDs across strips for the update call
-    int max_leds = 0;
-    for (int i = 0; i < state.num_strips; i++) {
-      if (state.num_leds[i] > max_leds)
-        max_leds = state.num_leds[i];
-    }
-
     // Run the program
-    state.current_program->update(state.num_strips, max_leds, time_ms,
-                                  esp32_pixel, *state.current_palette);
+    state.current_program->update(time_ms, esp32_pixel, *state.current_palette);
 
     // Send to hardware
     refresh_strips();

@@ -1,13 +1,22 @@
 cmake_minimum_required(VERSION 3.22)
 project(led_visualizer C)
 
+# Default to Release build if not specified
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 set(BUILD_SHARED_LIBS ON)
+
+# Suppress raylib's OpenGL deprecation warning on macOS
+set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS ON CACHE BOOL "" FORCE)
 add_subdirectory(extern/raylib)
+unset(CMAKE_SUPPRESS_DEVELOPER_WARNINGS CACHE)
 
 # Main executable - includes visualizer code directly
 add_executable(led_viz
@@ -32,9 +41,6 @@ add_custom_command(TARGET led_viz POST_BUILD
         ${CMAKE_SOURCE_DIR}/include/led_viz.h
         ${CMAKE_SOURCE_DIR}/include/led_viz_sdk.c
         ${CMAKE_BINARY_DIR}/sdk/
-    DEPENDS
-        ${CMAKE_SOURCE_DIR}/include/led_viz.h
-        ${CMAKE_SOURCE_DIR}/include/led_viz_sdk.c
 )
 
 # Platform extras

@@ -1,6 +1,7 @@
 
 #pragma once
 #include "palette.h"
+#include "programs.h"
 #include "raylib.h"
 #include <stdbool.h>
 
@@ -43,9 +44,6 @@ typedef struct {
   float phase; // bob phase offset
 } Person;
 
-// Forward declaration for Program (defined in programs.h)
-typedef struct Program Program;
-
 typedef struct VisualizerState {
   Camera camera;
   CameraMode camera_mode;
@@ -71,8 +69,12 @@ typedef struct VisualizerState {
   bool simple_render_mode;
 } VisualizerState;
 
-// Initialize state (load shader, create lights, set up camera)
-void visualizer_init(VisualizerState *state, int num_strips, int leds_per_strip);
+// Initialize state (load shaders, set up camera)
+void visualizer_init(VisualizerState *state);
+
+// Configure strips from StripDef array (call after init, and on hot-reload)
+void visualizer_configure_strips(VisualizerState *state,
+                                 const StripDef *strip_setup, int num_strips);
 
 // Update camera, input, light values
 void visualizer_update(VisualizerState *state);
