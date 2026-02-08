@@ -32,6 +32,51 @@ float get_strip_length_cm(int strip) {
   return g_strip_setup[strip].length_cm;
 }
 
+int get_matrix_width(int strip) {
+  if (strip < 0 || strip >= g_num_strips || !g_strip_setup)
+    return 0;
+  return g_strip_setup[strip].matrix_width;
+}
+
+int get_matrix_height(int strip) {
+  if (strip < 0 || strip >= g_num_strips || !g_strip_setup)
+    return 0;
+  return g_strip_setup[strip].matrix_height;
+}
+
+bool is_matrix(int strip) {
+  if (strip < 0 || strip >= g_num_strips || !g_strip_setup)
+    return false;
+  return g_strip_setup[strip].matrix_width > 0 &&
+         g_strip_setup[strip].matrix_height > 0;
+}
+
+int get_matrix_index(int strip, int x, int y) {
+  if (strip < 0 || strip >= g_num_strips || !g_strip_setup)
+    return 0;
+
+  int width = g_strip_setup[strip].matrix_width;
+  int height = g_strip_setup[strip].matrix_height;
+
+  if (width <= 0 || height <= 0)
+    return 0;
+
+  // Clamp coordinates
+  if (x < 0) x = 0;
+  if (x >= width) x = width - 1;
+  if (y < 0) y = 0;
+  if (y >= height) y = height - 1;
+
+  // Serpentine layout: even columns go down, odd columns go up
+  if (x & 1) {
+    // Odd column, reverse y
+    return x * height + (height - 1 - y);
+  } else {
+    // Even column, straight y
+    return x * height + y;
+  }
+}
+
 RGB palette_sample(const Palette16 palette, uint8_t index, uint8_t brightness,
                    bool interpolate) {
   uint8_t entry = index >> 4;

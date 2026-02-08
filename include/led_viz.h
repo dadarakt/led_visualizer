@@ -43,11 +43,13 @@ extern const Palette16 PALETTE_PARTY;
 // Strip Configuration
 // ============================================================================
 
-// Strip definition - defines a single LED strip
+// Strip definition - defines a single LED strip or matrix
 typedef struct {
-  int num_leds;
-  float position;   // 1D position (-1.0 to 1.0), 0.0 = center
-  float length_cm;  // Physical length in centimeters
+  int num_leds;       // Total LEDs (auto-calculated as width*height for matrices)
+  float position;     // 1D position (-1.0 to 1.0), 0.0 = center
+  float length_cm;    // Physical length/width in centimeters
+  int matrix_width;   // 0 = strip, >0 = matrix columns
+  int matrix_height;  // 0 = strip, >0 = matrix rows
 } StripDef;
 
 // Runtime accessors (call from update functions)
@@ -55,6 +57,15 @@ int get_num_strips(void);
 int get_strip_num_leds(int strip);
 float get_strip_position(int strip);
 float get_strip_length_cm(int strip);
+
+// Matrix accessors (returns 0 for regular strips)
+int get_matrix_width(int strip);
+int get_matrix_height(int strip);
+bool is_matrix(int strip);
+
+// Map (x, y) to linear index for matrices (serpentine layout)
+// x = column (0 to width-1), y = row (0 to height-1)
+int get_matrix_index(int strip, int x, int y);
 
 // Internal: called by runtime to set strip setup (do not call from programs)
 void _led_viz_set_strip_setup(const StripDef *setup, int num_strips);
@@ -79,8 +90,11 @@ typedef struct Program {
 // Your programs.c must define:
 //
 //   const StripDef strip_setup[] = {
+//       // LED strip: 144 LEDs, 1m long
 //       {.num_leds = 144, .position = -0.5f, .length_cm = 100.0f},
-//       {.num_leds = 60,  .position = 0.5f,  .length_cm = 500.0f},
+//       // LED matrix: 16x16 = 256 LEDs, 16cm wide
+//       {.num_leds = 256, .position = 0.5f, .length_cm = 16.0f,
+//        .matrix_width = 16, .matrix_height = 16},
 //   };
 //   const int NUM_STRIPS = sizeof(strip_setup) / sizeof(strip_setup[0]);
 //

@@ -42,6 +42,51 @@ float get_strip_length_cm(int strip) {
   return g_strip_setup[strip].length_cm;
 }
 
+int get_matrix_width(int strip) {
+  if (strip < 0 || strip >= g_num_strips || !g_strip_setup)
+    return 0;
+  return g_strip_setup[strip].matrix_width;
+}
+
+int get_matrix_height(int strip) {
+  if (strip < 0 || strip >= g_num_strips || !g_strip_setup)
+    return 0;
+  return g_strip_setup[strip].matrix_height;
+}
+
+bool is_matrix(int strip) {
+  if (strip < 0 || strip >= g_num_strips || !g_strip_setup)
+    return false;
+  return g_strip_setup[strip].matrix_width > 0 &&
+         g_strip_setup[strip].matrix_height > 0;
+}
+
+int get_matrix_index(int strip, int x, int y) {
+  if (strip < 0 || strip >= g_num_strips || !g_strip_setup)
+    return 0;
+
+  int width = g_strip_setup[strip].matrix_width;
+  int height = g_strip_setup[strip].matrix_height;
+
+  if (width <= 0 || height <= 0)
+    return 0;
+
+  // Clamp coordinates
+  if (x < 0) x = 0;
+  if (x >= width) x = width - 1;
+  if (y < 0) y = 0;
+  if (y >= height) y = height - 1;
+
+  // Serpentine layout: even columns go down, odd columns go up
+  if (x & 1) {
+    // Odd column, reverse y
+    return x * height + (height - 1 - y);
+  } else {
+    // Even column, straight y
+    return x * height + y;
+  }
+}
+
 // Pixel access function for simulator - reads/writes to LedStrip color data
 static void simulator_pixel(int strip, int led, uint8_t *r, uint8_t *g,
                             uint8_t *b) {
@@ -83,6 +128,50 @@ static void led_strip_create(LedStrip *strip, int num_leds, Vector3 position,
         .radius = radius,
         .attenuation = intensity,
     };
+  }
+}
+
+// Create a matrix with LEDs laid out in a 2D grid (serpentine wiring)
+static void led_matrix_create(LedStrip *strip, int width, int height,
+                              Vector3 position, float pixel_spacing,
+                              float intensity, float radius) {
+  int num_leds = width * height;
+  strip->num_leds = num_leds;
+  strip->position = position;
+  strip->rotation = (Vector3){0.0f, 0.0f, 0.0f};
+  strip->spacing = pixel_spacing;
+  strip->intensity = intensity;
+  strip->radius = radius;
+  memset(strip->leds, 0, sizeof(strip->leds));
+
+  // Lay out LEDs in a 2D grid matching serpentine layout
+  // x = column (0 to width-1, left to right)
+  // y = row (0 to height-1, bottom to top)
+  for (int x = 0; x < width; x++) {
+    for (int y = 0; y < height; y++) {
+      // Calculate linear index using serpentine layout
+      int idx;
+      if (x & 1) {
+        // Odd column, reverse y
+        idx = x * height + (height - 1 - y);
+      } else {
+        // Even column, straight y
+        idx = x * height + y;
+      }
+
+      // Position: x horizontal, y vertical (centered on position)
+      float px = position.x + (x - (width - 1) / 2.0f) * pixel_spacing;
+      float py = position.y + (y - (height - 1) / 2.0f) * pixel_spacing;
+      float pz = position.z;
+
+      strip->leds[idx] = (Light){
+          .enabled = true,
+          .position = (Vector3){px, py, pz},
+          .color = (Color){0, 0, 0, 255},
+          .radius = radius,
+          .attenuation = intensity,
+      };
+    }
   }
 }
 
@@ -325,24 +414,41 @@ void visualizer_configure_strips(VisualizerState *state,
   float led_radius = 0.004f;
   float led_intensity = 0.0015f;
 
-  // Create strips from StripDef array
+  // Create strips/matrices from StripDef array
   for (int i = 0; i < num_strips; i++) {
     int num_leds = strip_setup[i].num_leds;
     if (num_leds > MAX_LEDS_PER_STRIP)
       num_leds = MAX_LEDS_PER_STRIP;
 
-    // Convert length from cm to meters (default 100cm if not set)
-    float length_m = strip_setup[i].length_cm > 0
-                         ? strip_setup[i].length_cm / 100.0f
-                         : 1.0f;
-    float led_spacing = num_leds > 1 ? length_m / (float)(num_leds - 1) : 0.0f;
-
     // Map position (-1.0 to 1.0) to x coordinate (-0.75 to +0.75)
     float x = strip_setup[i].position * 0.75f;
 
-    led_strip_create(&state->strips[i], num_leds, (Vector3){x, 1.0f, -2.95f},
-                     (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity,
-                     led_radius);
+    int matrix_w = strip_setup[i].matrix_width;
+    int matrix_h = strip_setup[i].matrix_height;
+
+    if (matrix_w > 0 && matrix_h > 0) {
+      // Create as 2D matrix
+      // Convert length_cm to pixel spacing (length_cm is width of matrix)
+      float width_m = strip_setup[i].length_cm > 0
+                          ? strip_setup[i].length_cm / 100.0f
+                          : (float)matrix_w * 0.01f;
+      float pixel_spacing = matrix_w > 1 ? width_m / (float)(matrix_w - 1)
+                                         : 0.01f;
+
+      led_matrix_create(&state->strips[i], matrix_w, matrix_h,
+                        (Vector3){x, 1.0f, -2.95f}, pixel_spacing,
+                        led_intensity, led_radius);
+    } else {
+      // Create as 1D strip
+      float length_m = strip_setup[i].length_cm > 0
+                           ? strip_setup[i].length_cm / 100.0f
+                           : 1.0f;
+      float led_spacing = num_leds > 1 ? length_m / (float)(num_leds - 1) : 0.0f;
+
+      led_strip_create(&state->strips[i], num_leds, (Vector3){x, 1.0f, -2.95f},
+                       (Vector3){0.0f, 0.0f, 90.0f}, led_spacing, led_intensity,
+                       led_radius);
+    }
   }
 
   TraceLog(LOG_INFO, "Configured %d strips", num_strips);

@@ -13,14 +13,16 @@
 //   - programs[]     : Array of Program definitions
 //   - NUM_PROGRAMS   : Number of programs
 //
-// Example programs.c strip setup (strips can have different LED counts and lengths):
+// Example programs.c strip setup (strips and matrices):
 //
 //   const StripDef strip_setup[] = {
-//       {.num_leds = 60,  .position = -0.5f, .length_cm = 100.0f},  // 1m @ 60/m
-//       {.num_leds = 144, .position = 0.0f,  .length_cm = 100.0f},  // 1m @ 144/m
-//       {.num_leds = 300, .position = 0.5f,  .length_cm = 500.0f},  // 5m @ 60/m
+//       // LED strip: 144 LEDs, 1m
+//       {.num_leds = 144, .position = -0.5f, .length_cm = 100.0f},
+//       // LED matrix: 16x16, 16cm wide (use get_matrix_index() to address)
+//       {.num_leds = 256, .position = 0.5f, .length_cm = 16.0f,
+//        .matrix_width = 16, .matrix_height = 16},
 //   };
-//   const int NUM_STRIPS = 3;
+//   const int NUM_STRIPS = 2;
 //
 #include "programs.c"
 
