@@ -7,8 +7,11 @@
 const StripDef strip_setup[] = {
     {.num_leds = 144, .position = -0.7f, .length_cm = 100.0f},
     {.num_leds = 144, .position = -0.35f, .length_cm = 100.0f},
-    {.num_leds = 256, .position = 0.0f, .length_cm = 32.0f,
-     .matrix_width = 32, .matrix_height = 8},
+    {.num_leds = 256,
+     .position = 0.0f,
+     .length_cm = 32.0f,
+     .matrix_width = 32,
+     .matrix_height = 8},
     {.num_leds = 144, .position = 0.35f, .length_cm = 100.0f},
     {.num_leds = 144, .position = 0.7f, .length_cm = 100.0f},
 };
